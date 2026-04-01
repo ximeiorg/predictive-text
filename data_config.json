@@ -1,0 +1,18 @@
+{
+  "sources": [
+    {
+      "path": "大王饶命.txt",
+      "format": "txt",
+      "weight": 1.0,
+      "encoding": "utf-8"
+    }
+  ],
+  "max_samples": 100000000,
+  "min_length": 5,
+  "max_length": 512,
+  "shuffle": true,
+  "seed": 42,
+  "cache_dir": "data/cache",
+  "clean_text": true,
+  "remove_duplicates": true
+}

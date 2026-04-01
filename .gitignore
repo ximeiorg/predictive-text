@@ -1,0 +1,120 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+*.egg-link
+dist/
+build/
+wheels/
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+.Python
+
+# Virtual environments
+.venv
+venv/
+ENV/
+env/
+.env
+
+# IDE and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Project specific files
+
+# Data files (large binary files)
+data/*.bin
+data/*.model
+data/*.vocab
+data/cache/
+data/cache/*.txt
+data/cache/*.json
+
+# Model files (large files)
+output/*.pt
+output/*.pth
+output/*.bin
+output/*.onnx
+mobile/*.pt
+mobile/*.pth
+mobile/*.bin
+mobile/*.onnx
+
+# Temporary and cache files
+*.tmp
+*.temp
+*.log
+*.bak
+*.cache
+.cache/
+temp/
+tmp/
+data
+# Corpus and data sources (optional - comment out if you want to track)
+# *.txt
+# data/
+# corpus/
+
+# Lock files (optional - some projects prefer to track these)
+# uv.lock
+# poetry.lock
+# Pipfile.lock
+
+# Test coverage
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Jupyter notebooks
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# pytype
+.pytype/
+
+# Cython
+*.c
+*.cpp
+
+# Package files
+*.tar.gz
+*.zip
+*.rar
+*.7z
