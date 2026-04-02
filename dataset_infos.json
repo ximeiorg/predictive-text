@@ -1,0 +1,26 @@
+{
+  "default": {
+    "features": {
+      "text_1": {
+        "_type": "Value"
+      },
+      "image_1": {
+        "_type": "Image"
+      },
+      "audio_1": {
+        "_type": "Audio"
+      },
+      "video_1": {
+        "_type": "Video"
+      }
+    },
+    "splits": {
+      "train": {
+        "path": "Please input your file path"
+      },
+      "test": {
+        "path": "Please input your file path"
+      }
+    }
+  }
+}

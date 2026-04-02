@@ -15,7 +15,8 @@ wheels/
 pip-log.txt
 pip-delete-this-directory.txt
 .Python
-
+output
+zhihuRec
 # Virtual environments
 .venv
 venv/
