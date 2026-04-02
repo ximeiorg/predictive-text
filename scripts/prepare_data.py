@@ -101,11 +101,16 @@ def tokenize_and_save(
     """Tokenize 并保存为二进制文件"""
     print("\nTokenizing 数据...")
 
-    import subprocess
+    print("统计非空行数...")
+    total_non_empty = 0
+    with open(text_path, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                total_non_empty += 1
 
-    result = subprocess.run(["wc", "-l", text_path], capture_output=True, text=True)
-    total_lines = int(result.stdout.split()[0])
-    split_at = int(total_lines * (1 - val_ratio))
+    split_at = int(total_non_empty * (1 - val_ratio))
+    print(f"总非空行数: {total_non_empty:,}, 分割点: {split_at:,}")
+    print(f"训练集行数: {split_at:,}, 验证集行数: {total_non_empty - split_at:,}")
 
     train_count = 0
     val_count = 0
@@ -115,7 +120,9 @@ def tokenize_and_save(
         open(train_output + ".tmp", "wb") as train_f,
         open(val_output + ".tmp", "wb") as val_f,
     ):
-        for line in tqdm(stream_text(text_path), total=total_lines, desc="Tokenizing"):
+        for line in tqdm(
+            stream_text(text_path), total=total_non_empty, desc="Tokenizing"
+        ):
             ids = tokenizer.encode(line).ids
 
             arr = np.array(ids, dtype=np.uint16)
@@ -127,6 +134,11 @@ def tokenize_and_save(
                 val_count += len(ids)
 
             line_idx += 1
+
+            if line_idx % 100000 == 0:
+                print(
+                    f"进度: {line_idx:,}/{total_non_empty:,}, 训练tokens: {train_count:,}, 验证tokens: {val_count:,}"
+                )
 
             if line_idx % 10000 == 0:
                 gc.collect()
