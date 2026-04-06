@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 import argparse
 
-from src.config import ModelConfig
+from src.config import ModelConfig, list_model_sizes, MODEL_SIZES
 from src.model.transformer import create_model
 
 torch.serialization.add_safe_globals([ModelConfig])
@@ -497,50 +497,62 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  # 导出推荐配置 (int8 + HQQ + FP16)
-  uv run src/export_mobile.py
+  # 导出 small 模型 (推荐手机)
+  uv run src/export_mobile.py --model-size small
+
+  # 导出 tiny 模型 (极致体积)
+  uv run src/export_mobile.py --model-size tiny
 
   # 导出所有版本 (int4, int8+HQQ, FP16, float32)
-  uv run src/export_mobile.py --all
+  uv run src/export_mobile.py --model-size small --all
 
   # 高精度 int8 (HQQ + 分块量化)
-  uv run src/export_mobile.py --quant-bits 8 --hqq --block-size 128
+  uv run src/export_mobile.py --model-size small --quant-bits 8 --hqq --block-size 128
 
-  # 极致压缩 int4
-  uv run src/export_mobile.py --quant-bits 4
+模型尺寸:
+  tiny   - ~2M 参数, 8 MB  (极致体积，低端手机)
+  small  - ~6M 参数, 24 MB (推荐手机)
+  medium - ~12M 参数, 48 MB (高端手机)
+  base   - ~20M 参数, 80 MB (默认，PC/服务器)
+  large  - ~40M 参数, 160 MB (追求精度)
 
-  # FP16 无损压缩
-  uv run src/export_mobile.py --fp16-only
-
-优化说明:
+量化优化:
   --hqq         HQQ量化算法，精度更高 (推荐)
   --block-size  分块量化，精度更高 (32-128)
   --fp16        FP16压缩，体积减半，精度无损
-
-推荐方案:
-  追求体积: model_q4.mnn (27MB)
-  推荐使用: model_q8_hqq.mnn (38MB, 精度更高)
-  无损压缩: model_fp16.mnn (52MB)
-  最高精度: model.mnn (104MB)
         """,
     )
     parser.add_argument(
         "--checkpoint",
         type=str,
-        default="output/best_model.pt",
-        help="模型 checkpoint 路径",
+        default=None,
+        help="模型 checkpoint 路径 (使用 --model-size 自动查找)",
+    )
+    parser.add_argument(
+        "--model-size",
+        type=str,
+        default="base",
+        choices=list(MODEL_SIZES.keys()),
+        help="模型尺寸 (默认: base)",
     )
     parser.add_argument(
         "--vocab", type=str, default="data/vocab.json", help="词表 JSON 文件路径"
     )
-    parser.add_argument("--output-dir", type=str, default="mobile", help="输出目录")
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="输出目录 (默认: mobile/<model-size>)",
+    )
     parser.add_argument(
         "--quant-bits",
         type=str,
         default="8",
         help="量化位数: 4, 8, 16, 或 all (默认: 8)",
     )
-    parser.add_argument("--max-seq-len", type=int, default=32, help="最大序列长度")
+    parser.add_argument(
+        "--max-seq-len", type=int, default=None, help="最大序列长度 (自动)"
+    )
     parser.add_argument("--keep-onnx", action="store_true", help="保留中间 ONNX 文件")
 
     # 新增优化参数
@@ -563,15 +575,52 @@ def main():
         help="导出所有优化版本 (int4, int8+HQQ, FP16, float32)",
     )
     parser.add_argument("--fp16-only", action="store_true", help="只导出 FP16 模型")
+    parser.add_argument(
+        "--list-sizes",
+        action="store_true",
+        help="列出所有可用的模型尺寸",
+    )
 
     args = parser.parse_args()
+
+    # 显示可用配置
+    if args.list_sizes:
+        list_model_sizes()
+        return 0
 
     # 处理 --no-hqq
     if args.no_hqq:
         args.hqq = False
 
-    output_dir = Path(args.output_dir)
+    # 获取模型配置
+    model_config = ModelConfig.from_name(args.model_size)
+
+    # 确定 checkpoint 路径
+    if args.checkpoint:
+        checkpoint_path = args.checkpoint
+    else:
+        checkpoint_path = f"output/{args.model_size}/best_model.pt"
+
+    if not Path(checkpoint_path).exists():
+        print(f"\n❌ Checkpoint 不存在: {checkpoint_path}")
+        print("\n可用的模型尺寸:")
+        list_model_sizes()
+        print(f"\n请先训练 {args.model_size} 模型:")
+        print(
+            f"  uv run src/train.py --model-size {args.model_size} --use-prepared-data"
+        )
+        return 1
+
+    # 确定输出目录
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+    else:
+        output_dir = Path(f"mobile/{args.model_size}")
+
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # 确定max_seq_len
+    max_seq_len = args.max_seq_len if args.max_seq_len else model_config.max_seq_len
 
     # 确定要导出的配置
     if args.all:
@@ -627,9 +676,11 @@ def main():
     print("\n" + "=" * 60)
     print("模型导出 - MNN 格式 (优化版)")
     print("=" * 60)
-    print(f"Checkpoint:   {args.checkpoint}")
+    print(f"模型尺寸:     {args.model_size}")
+    print(f"模型配置:     {model_config}")
+    print(f"Checkpoint:   {checkpoint_path}")
     print(f"Vocabulary:   {args.vocab}")
-    print(f"Output:       {args.output_dir}/")
+    print(f"Output:       {output_dir}/")
     print(f"配置数量:     {len(configs)}")
 
     for cfg in configs:
@@ -645,9 +696,6 @@ def main():
     print("=" * 60 + "\n")
 
     # Check inputs
-    if not Path(args.checkpoint).exists():
-        print(f"❌ Checkpoint 不存在: {args.checkpoint}")
-        return 1
     if not Path(args.vocab).exists():
         print(f"❌ 词表不存在: {args.vocab}")
         return 1
@@ -657,7 +705,7 @@ def main():
 
     # Step 1: Export to ONNX (only once)
     try:
-        export_to_onnx(args.checkpoint, str(onnx_path), args.max_seq_len)
+        export_to_onnx(checkpoint_path, str(onnx_path), max_seq_len)
     except Exception as e:
         print(f"❌ ONNX 导出失败: {e}")
         return 1

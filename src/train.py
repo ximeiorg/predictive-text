@@ -12,7 +12,7 @@ from tqdm import tqdm
 from tokenizers import Tokenizer
 from torch.utils.tensorboard import SummaryWriter
 
-from src.config import ModelConfig, TrainingConfig
+from src.config import ModelConfig, TrainingConfig, list_model_sizes, MODEL_SIZES
 from src.model.transformer import create_model
 from src.data.dataset import WikipediaDataset, DataLoader
 from src.data.loader import load_text_data
@@ -124,7 +124,28 @@ def evaluate(model, dataloader, device, writer=None, global_step=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train Decoder-Only Transformer")
+    parser = argparse.ArgumentParser(
+        description="Train Decoder-Only Transformer",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+模型尺寸配置:
+  tiny   - ~2M 参数, 8 MB  (极致体积，低端手机)
+  small  - ~6M 参数, 24 MB (推荐手机)
+  medium - ~12M 参数, 48 MB (高端手机)
+  base   - ~20M 参数, 80 MB (默认，PC/服务器)
+  large  - ~40M 参数, 160 MB (追求精度)
+
+示例:
+  # 使用 small 模型训练
+  uv run src/train.py --model-size small --use-prepared-data
+
+  # 使用 tiny 模型训练
+  uv run src/train.py --model-size tiny --use-prepared-data --epochs 15
+
+  # 查看所有可用配置
+  python -c "from src.config import list_model_sizes; list_model_sizes()"
+        """,
+    )
 
     parser.add_argument(
         "--data-path",
@@ -133,9 +154,15 @@ def main():
         help="Path to Wikipedia JSON file",
     )
     parser.add_argument("--vocab-size", type=int, default=8192, help="Vocabulary size")
-    parser.add_argument("--batch-size", type=int, default=512, help="Batch size")
-    parser.add_argument("--epochs", type=int, default=3, help="Number of epochs")
-    parser.add_argument("--lr", type=float, default=5e-4, help="Learning rate")
+    parser.add_argument(
+        "--batch-size", type=int, default=None, help="Batch size (auto if not set)"
+    )
+    parser.add_argument(
+        "--epochs", type=int, default=None, help="Number of epochs (auto if not set)"
+    )
+    parser.add_argument(
+        "--lr", type=float, default=None, help="Learning rate (auto if not set)"
+    )
     parser.add_argument(
         "--device", type=str, default="auto", help="Device (auto/cpu/cuda/mps)"
     )
@@ -151,10 +178,42 @@ def main():
         "--val-ratio", type=float, default=0.05, help="Validation split ratio"
     )
     parser.add_argument(
-        "--max-seq-len", type=int, default=32, help="Maximum sequence length"
+        "--max-seq-len",
+        type=int,
+        default=None,
+        help="Maximum sequence length (auto if not set)",
+    )
+    parser.add_argument(
+        "--model-size",
+        type=str,
+        default="base",
+        choices=list(MODEL_SIZES.keys()),
+        help="Model size configuration (default: base)",
+    )
+    parser.add_argument(
+        "--list-sizes",
+        action="store_true",
+        help="List all available model sizes and exit",
     )
 
     args = parser.parse_args()
+
+    # 显示可用配置
+    if args.list_sizes:
+        list_model_sizes()
+        return
+
+    # 获取模型配置
+    model_config = ModelConfig.from_name(args.model_size)
+
+    # 获取推荐的训练配置
+    recommended_training = TrainingConfig.for_model_size(args.model_size)
+
+    # 命令行参数覆盖
+    batch_size = args.batch_size if args.batch_size else recommended_training.batch_size
+    learning_rate = args.lr if args.lr else recommended_training.learning_rate
+    num_epochs = args.epochs if args.epochs else recommended_training.num_epochs
+    max_seq_len = args.max_seq_len if args.max_seq_len else model_config.max_seq_len
 
     if args.device == "auto":
         if torch.cuda.is_available():
@@ -166,15 +225,26 @@ def main():
     else:
         device = torch.device(args.device)
 
-    print(f"Using device: {device}")
+    # 输出配置信息
+    print("\n" + "=" * 60)
+    print("训练配置")
+    print("=" * 60)
+    print(f"模型尺寸:     {args.model_size}")
+    print(f"模型配置:     {model_config}")
+    print(f"设备:         {device}")
+    print(f"Batch Size:   {batch_size}")
+    print(f"Learning Rate: {learning_rate}")
+    print(f"Epochs:       {num_epochs}")
+    print(f"Max Seq Len:  {max_seq_len}")
+    print("=" * 60 + "\n")
 
-    output_dir = Path(args.output_dir)
+    output_dir = Path(args.output_dir) / args.model_size  # 按模型尺寸分目录
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = Path("data")
     data_dir.mkdir(parents=True, exist_ok=True)
 
     training_config = TrainingConfig(
-        batch_size=args.batch_size, learning_rate=args.lr, num_epochs=args.epochs
+        batch_size=batch_size, learning_rate=learning_rate, num_epochs=num_epochs
     )
 
     vocab_path = data_dir / "vocab.json"
@@ -189,9 +259,9 @@ def main():
             vocab = json.load(f)
         actual_vocab_size = len(vocab)
         print(f"Actual vocab size from vocab.json: {actual_vocab_size}")
-        model_config = ModelConfig(
-            vocab_size=actual_vocab_size, max_seq_len=args.max_seq_len
-        )
+        # 使用预设的模型配置，只更新 vocab_size 和 max_seq_len
+        model_config.vocab_size = actual_vocab_size
+        model_config.max_seq_len = max_seq_len
     else:
         print(f"Loading data from: {args.data_path}")
         vocab_path, train_data_path, val_data_path = load_text_data(
@@ -199,16 +269,15 @@ def main():
             output_dir=str(data_dir),
             vocab_size=args.vocab_size,
             val_ratio=args.val_ratio,
-            max_seq_len=args.max_seq_len,
+            max_seq_len=max_seq_len,
         )
         with open(vocab_path, "r", encoding="utf-8") as f:
             import json
 
             vocab = json.load(f)
         actual_vocab_size = len(vocab)
-        model_config = ModelConfig(
-            vocab_size=actual_vocab_size, max_seq_len=args.max_seq_len
-        )
+        model_config.vocab_size = actual_vocab_size
+        model_config.max_seq_len = max_seq_len
 
     print("\nLoading datasets...")
     train_dataset = WikipediaDataset(

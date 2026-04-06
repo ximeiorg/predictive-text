@@ -7,7 +7,7 @@ import jieba
 from pathlib import Path
 import argparse
 
-from src.config import ModelConfig
+from src.config import ModelConfig, list_model_sizes, MODEL_SIZES
 from src.model.transformer import create_model
 
 torch.serialization.add_safe_globals([ModelConfig])
@@ -157,12 +157,33 @@ def interactive_mode(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Test the word-level prediction model")
+    parser = argparse.ArgumentParser(
+        description="Test the word-level prediction model",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例:
+  # 使用 small 模型推理
+  uv run src/inference.py --model-size small --interactive
+
+  # 使用 tiny 模型测试
+  uv run src/inference.py --model-size tiny --text "今天天气"
+
+  # 指定 checkpoint 路径
+  uv run src/inference.py --checkpoint output/small/best_model.pt --interactive
+        """,
+    )
     parser.add_argument(
         "--checkpoint",
         type=str,
-        default="output/best_model.pt",
-        help="Model checkpoint",
+        default=None,
+        help="Model checkpoint path (auto if --model-size is set)",
+    )
+    parser.add_argument(
+        "--model-size",
+        type=str,
+        default=None,
+        choices=list(MODEL_SIZES.keys()),
+        help="Model size to use (auto-finds checkpoint)",
     )
     parser.add_argument(
         "--vocab", type=str, default="data/vocab.json", help="Vocabulary file"
@@ -179,11 +200,37 @@ def main():
     )
     parser.add_argument("--top-k", type=int, default=5, help="Top-k sampling")
     parser.add_argument("--interactive", action="store_true", help="Interactive mode")
+    parser.add_argument(
+        "--list-sizes",
+        action="store_true",
+        help="List all available model sizes and exit",
+    )
 
     args = parser.parse_args()
 
-    print(f"Loading model from {args.checkpoint}...")
-    model, device = load_model(args.checkpoint, args.device)
+    # 显示可用配置
+    if args.list_sizes:
+        list_model_sizes()
+        return
+
+    # 确定 checkpoint 路径
+    if args.checkpoint:
+        checkpoint_path = args.checkpoint
+    elif args.model_size:
+        checkpoint_path = f"output/{args.model_size}/best_model.pt"
+        print(f"Auto-selecting checkpoint for {args.model_size}: {checkpoint_path}")
+    else:
+        checkpoint_path = "output/base/best_model.pt"
+        print(f"Using default checkpoint: {checkpoint_path}")
+
+    if not Path(checkpoint_path).exists():
+        print(f"\n❌ Checkpoint not found: {checkpoint_path}")
+        print("\nAvailable model sizes:")
+        list_model_sizes()
+        return
+
+    print(f"Loading model from {checkpoint_path}...")
+    model, device = load_model(checkpoint_path, args.device)
     print(f"Model loaded on {device}")
 
     print(f"Loading vocabulary from {args.vocab}...")
