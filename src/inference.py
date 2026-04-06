@@ -1,8 +1,9 @@
-"""Inference script for testing the trained model."""
+"""Inference script for word-level prediction model."""
 
 import torch
 import torch.serialization
-from tokenizers import Tokenizer
+import json
+import jieba
 from pathlib import Path
 import argparse
 
@@ -10,6 +11,55 @@ from src.config import ModelConfig
 from src.model.transformer import create_model
 
 torch.serialization.add_safe_globals([ModelConfig])
+
+
+class WordTokenizer:
+    """Simple word-level tokenizer."""
+
+    def __init__(self, vocab_path: str):
+        with open(vocab_path, "r", encoding="utf-8") as f:
+            self.word2id = json.load(f)
+        self.id2word = {v: k for k, v in self.word2id.items()}
+        self.vocab_size = len(self.word2id)
+
+        self.pad_id = self.word2id.get("[PAD]", 0)
+        self.bos_id = self.word2id.get("[BOS]", 1)
+        self.eos_id = self.word2id.get("[EOS]", 2)
+        self.unk_id = self.word2id.get("[UNK]", 3)
+
+    def encode(self, text: str):
+        """Encode text to token ids."""
+        # 先尝试标准分词
+        words = list(jieba.cut(text))
+        words = [w for w in words if w.strip()]
+
+        # 检查是否有未登录词
+        ids = []
+        final_words = []
+        for w in words:
+            if w in self.word2id:
+                ids.append(self.word2id[w])
+                final_words.append(w)
+            else:
+                # 未登录词用全模式切分，只取词表中的词
+                sub_words = list(jieba.cut(w, cut_all=True))
+                sub_words = [
+                    sw for sw in sub_words if sw.strip() and sw in self.word2id
+                ]
+                if sub_words:
+                    for sw in sub_words:
+                        ids.append(self.word2id[sw])
+                        final_words.append(sw)
+                else:
+                    # 如果全模式也找不到，标记为UNK
+                    ids.append(self.unk_id)
+                    final_words.append(w)
+
+        return {"ids": ids, "words": final_words}
+
+    def decode(self, ids: list):
+        """Decode token ids to words."""
+        return "".join([self.id2word.get(i, "[UNK]") for i in ids])
 
 
 def load_model(checkpoint_path: str, device: str = "auto"):
@@ -22,7 +72,7 @@ def load_model(checkpoint_path: str, device: str = "auto"):
             device = "cpu"
     device = torch.device(device)
 
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     config = checkpoint.get("config", ModelConfig())
 
     model = create_model(config)
@@ -34,21 +84,20 @@ def load_model(checkpoint_path: str, device: str = "auto"):
 
 
 def predict_next_tokens(
-    model, tokenizer, text, device, max_new_tokens=10, temperature=1.0, top_k=5
+    model,
+    tokenizer,
+    text,
+    device,
+    max_new_tokens=10,
+    temperature=1.0,
+    top_k=5,
+    deterministic=True,
 ):
     encoded = tokenizer.encode(text)
-    tokens = encoded.ids
-
-    # 去掉 BOS/EOS (tokenizer 自动添加)
-    bos_id = tokenizer.token_to_id("[BOS]")
-    eos_id = tokenizer.token_to_id("[EOS]")
-    if tokens[0] == bos_id:
-        tokens = tokens[1:]
-    if tokens and tokens[-1] == eos_id:
-        tokens = tokens[:-1]
+    tokens = encoded["ids"]
 
     input_ids = torch.tensor([tokens], dtype=torch.long, device=device)
-    input_len = len(tokens)  # 记录输入长度
+    input_len = len(tokens)
 
     with torch.no_grad():
         output_ids = model.generate(
@@ -56,23 +105,15 @@ def predict_next_tokens(
             max_new_tokens=max_new_tokens,
             temperature=temperature,
             top_k=top_k,
+            deterministic=deterministic,
         )
 
     all_tokens = output_ids[0].tolist()
-
-    # 只取新生成的 tokens（去掉输入部分）
     generated_tokens = all_tokens[input_len:]
 
-    # 去掉特殊 token
-    special_ids = {
-        bos_id,
-        eos_id,
-        tokenizer.token_to_id("[PAD]"),
-        tokenizer.token_to_id("[UNK]"),
-    }
+    special_ids = {tokenizer.bos_id, tokenizer.eos_id, tokenizer.pad_id}
     generated_tokens = [t for t in generated_tokens if t not in special_ids]
 
-    # 解码
     generated_text = tokenizer.decode(generated_tokens)
 
     return generated_text
@@ -82,8 +123,8 @@ def interactive_mode(
     model, tokenizer, device, max_new_tokens=10, temperature=1.0, top_k=5
 ):
     print("\n" + "=" * 50)
-    print("输入法预测模型 - 交互模式")
-    print("输入文本，模型将预测接下来的词")
+    print("词语联想模型 - 交互模式")
+    print("输入文本，模型将预测接下来的词语")
     print("输入 'quit' 退出")
     print("=" * 50 + "\n")
 
@@ -108,7 +149,7 @@ def interactive_mode(
                 top_k=top_k,
             )
 
-            print(f"预测: {result}\n")
+            print(f"联想: {result}\n")
 
         except KeyboardInterrupt:
             print("\n退出交互模式")
@@ -116,7 +157,7 @@ def interactive_mode(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Test the trained model")
+    parser = argparse.ArgumentParser(description="Test the word-level prediction model")
     parser.add_argument(
         "--checkpoint",
         type=str,
@@ -146,8 +187,8 @@ def main():
     print(f"Model loaded on {device}")
 
     print(f"Loading vocabulary from {args.vocab}...")
-    tokenizer = Tokenizer.from_file(args.vocab)
-    print(f"Vocabulary size: {tokenizer.get_vocab_size()}")
+    tokenizer = WordTokenizer(args.vocab)
+    print(f"Vocabulary size: {tokenizer.vocab_size}")
 
     if args.interactive:
         interactive_mode(
@@ -164,7 +205,7 @@ def main():
             top_k=args.top_k,
         )
         print(f"输入: {args.text}")
-        print(f"预测: {result}")
+        print(f"联想: {result}")
     else:
         test_texts = [
             "今天天气",
@@ -174,7 +215,7 @@ def main():
             "时间过得",
         ]
 
-        print("\n测试预测:")
+        print("\n测试联想:")
         print("-" * 50)
         for text in test_texts:
             result = predict_next_tokens(
@@ -187,7 +228,7 @@ def main():
                 top_k=args.top_k,
             )
             print(f"输入: {text}")
-            print(f"预测: {result}")
+            print(f"联想: {result}")
             print("-" * 50)
 
 

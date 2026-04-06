@@ -107,6 +107,7 @@ class DecoderTransformer(nn.Module):
 
         self.ln_final = nn.LayerNorm(config.hidden_dim)
         self.lm_head = nn.Linear(config.hidden_dim, config.vocab_size, bias=False)
+        self.lm_head.weight = self.token_embedding.weight
 
         self.dropout = nn.Dropout(config.dropout)
 
@@ -149,19 +150,25 @@ class DecoderTransformer(nn.Module):
 
         loss = None
         if labels is not None:
-            shift_logits = logits[:, :-1, :].contiguous()
-            shift_labels = labels[:, 1:].contiguous()
-
+            # Dataset already provides shifted labels (input_ids[:-1], labels[1:])
+            # So logits and labels should have the same length, use them directly
             loss = F.cross_entropy(
-                shift_logits.view(-1, self.config.vocab_size),
-                shift_labels.view(-1),
+                logits.view(-1, self.config.vocab_size),
+                labels.view(-1),
                 ignore_index=self.config.pad_token_id,
                 label_smoothing=self.config.label_smoothing,
             )
 
         return {"logits": logits, "loss": loss}
 
-    def generate(self, input_ids, max_new_tokens, temperature=1.0, top_k=None):
+    def generate(
+        self,
+        input_ids,
+        max_new_tokens,
+        temperature=1.0,
+        top_k=None,
+        deterministic=False,
+    ):
         for _ in range(max_new_tokens):
             if input_ids.size(1) > self.config.max_seq_len:
                 context = input_ids[:, -self.config.max_seq_len :]
@@ -175,8 +182,11 @@ class DecoderTransformer(nn.Module):
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                 logits[logits < v[:, [-1]]] = float("-inf")
 
-            probs = F.softmax(logits, dim=-1)
-            next_token = torch.multinomial(probs, num_samples=1)
+            if deterministic or temperature == 0:
+                next_token = torch.argmax(logits, dim=-1, keepdim=True)
+            else:
+                probs = F.softmax(logits, dim=-1)
+                next_token = torch.multinomial(probs, num_samples=1)
 
             input_ids = torch.cat([input_ids, next_token], dim=1)
 

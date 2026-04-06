@@ -6,6 +6,7 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
 import numpy as np
 import argparse
+from datetime import datetime
 from pathlib import Path
 from tqdm import tqdm
 from tokenizers import Tokenizer
@@ -14,18 +15,19 @@ from torch.utils.tensorboard import SummaryWriter
 from src.config import ModelConfig, TrainingConfig
 from src.model.transformer import create_model
 from src.data.dataset import WikipediaDataset, DataLoader
-from src.data.loader import load_wikipedia_json
+from src.data.loader import load_text_data
 
 
-def get_linear_warmup_scheduler(optimizer, warmup_steps, total_steps):
+def get_cosine_warmup_scheduler(optimizer, warmup_steps, total_steps, min_lr=1e-5):
+    import math
+
     def lr_lambda(current_step):
         if current_step < warmup_steps:
             return float(current_step) / float(max(1, warmup_steps))
-        return max(
-            0.0,
-            float(total_steps - current_step)
-            / float(max(1, total_steps - warmup_steps)),
+        progress = float(current_step - warmup_steps) / float(
+            max(1, total_steps - warmup_steps)
         )
+        return max(min_lr, 0.5 * (1.0 + math.cos(math.pi * progress)))
 
     return LambdaLR(optimizer, lr_lambda)
 
@@ -127,7 +129,7 @@ def main():
     parser.add_argument(
         "--data-path",
         type=str,
-        default="data/wiki_data/wiki_zh_latest.json",
+        default="data/cleaned/all_cleaned.txt",
         help="Path to Wikipedia JSON file",
     )
     parser.add_argument("--vocab-size", type=int, default=8192, help="Vocabulary size")
@@ -181,23 +183,29 @@ def main():
 
     if args.use_prepared_data and train_data_path.exists() and vocab_path.exists():
         print("Using prepared data...")
-        tokenizer = Tokenizer.from_file(str(vocab_path))
-        actual_vocab_size = tokenizer.get_vocab_size()
+        with open(vocab_path, "r", encoding="utf-8") as f:
+            import json
+
+            vocab = json.load(f)
+        actual_vocab_size = len(vocab)
         print(f"Actual vocab size from vocab.json: {actual_vocab_size}")
         model_config = ModelConfig(
             vocab_size=actual_vocab_size, max_seq_len=args.max_seq_len
         )
     else:
         print(f"Loading data from: {args.data_path}")
-        vocab_path, train_data_path, val_data_path = load_wikipedia_json(
+        vocab_path, train_data_path, val_data_path = load_text_data(
             data_path=args.data_path,
             output_dir=str(data_dir),
             vocab_size=args.vocab_size,
             val_ratio=args.val_ratio,
             max_seq_len=args.max_seq_len,
         )
-        tokenizer = Tokenizer.from_file(str(vocab_path))
-        actual_vocab_size = tokenizer.get_vocab_size()
+        with open(vocab_path, "r", encoding="utf-8") as f:
+            import json
+
+            vocab = json.load(f)
+        actual_vocab_size = len(vocab)
         model_config = ModelConfig(
             vocab_size=actual_vocab_size, max_seq_len=args.max_seq_len
         )
@@ -231,16 +239,17 @@ def main():
     )
 
     total_steps = len(train_loader) * training_config.num_epochs
-    scheduler = get_linear_warmup_scheduler(
+    scheduler = get_cosine_warmup_scheduler(
         optimizer, warmup_steps=training_config.warmup_steps, total_steps=total_steps
     )
 
     # TensorBoard
-    log_dir = output_dir / "logs"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_dir = output_dir / "logs" / f"experiment_{timestamp}"
     log_dir.mkdir(parents=True, exist_ok=True)
     writer = SummaryWriter(log_dir=str(log_dir))
     print(f"TensorBoard logs: {log_dir}")
-    print(f"Run: tensorboard --logdir {log_dir}")
+    print(f"Run: tensorboard --logdir {output_dir / 'logs'}")
 
     best_val_loss = float("inf")
     global_step = 0

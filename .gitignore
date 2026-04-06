@@ -23,7 +23,7 @@ venv/
 ENV/
 env/
 .env
-
+data_*
 # IDE and editors
 .vscode/
 .idea/
@@ -35,7 +35,8 @@ env/
 .settings/
 *.sublime-project
 *.sublime-workspace
-
+mobile
+rawdata
 # OS generated files
 .DS_Store
 .DS_Store?

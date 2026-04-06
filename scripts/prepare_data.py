@@ -13,11 +13,16 @@ from tqdm import tqdm
 from tokenizers import Tokenizer, models, trainers, pre_tokenizers, processors
 
 
-def extract_text_from_jsonl(jsonl_paths: list[str], output_path: str):
-    """从 JSONL 文件提取中文文本"""
+def extract_text_from_jsonl(
+    jsonl_paths: list[str], output_path: str, merge_lines: int = 10
+):
+    """从 JSONL 文件提取中文文本并合并成连续流"""
     print("从 JSONL 文件提取文本...")
+    print(f"每 {merge_lines} 个问答合并成一个段落")
 
-    total_lines = 0
+    total_segments = 0
+    buffer = []
+
     with open(output_path, "w", encoding="utf-8") as out_f:
         for jsonl_path in jsonl_paths:
             print(f"处理: {jsonl_path}")
@@ -32,25 +37,35 @@ def extract_text_from_jsonl(jsonl_paths: list[str], output_path: str):
                     except json.JSONDecodeError:
                         continue
 
-                    texts = []
-
                     if "question" in data and "answer" in data:
-                        texts.append(data["question"])
-                        texts.append(data["answer"])
+                        q = data["question"].strip()
+                        a = data["answer"].strip()
+                        if q and a:
+                            buffer.append(q)
+                            buffer.append(a)
                     elif "input" in data and "content" in data:
-                        texts.append(data["input"])
-                        texts.append(data["content"])
+                        i = data["input"].strip()
+                        c = data["content"].strip()
+                        if i and c:
+                            buffer.append(i)
+                            buffer.append(c)
 
-                    for text in texts:
-                        if text and text.strip():
-                            out_f.write(text.strip() + "\n")
-                            total_lines += 1
+                    if len(buffer) >= merge_lines * 2:
+                        merged_text = "".join(buffer)
+                        out_f.write(merged_text + "\n")
+                        buffer = []
+                        total_segments += 1
 
-                    if total_lines % 10000 == 0:
+                    if total_segments % 10000 == 0:
                         gc.collect()
 
-    print(f"提取了 {total_lines:,} 行文本")
-    return total_lines
+        if buffer:
+            merged_text = "".join(buffer)
+            out_f.write(merged_text + "\n")
+            total_segments += 1
+
+    print(f"生成 {total_segments:,} 个连续文本段落")
+    return total_segments
 
 
 def stream_text(file_path: str) -> Iterator[str]:
