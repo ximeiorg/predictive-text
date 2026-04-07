@@ -48,7 +48,7 @@ uv run src/inference.py --model-size small --text "今天天气"
 uv run src/inference.py --checkpoint output/small/best_model.pt --interactive
 ```
 
-### 4. 导出为 MNN 格式
+### 4. 导出为 ONNX 格式
 
 ```bash
 # 导出 small 模型
@@ -57,8 +57,8 @@ uv run src/export_mobile.py --model-size small
 # 导出 tiny 模型
 uv run src/export_mobile.py --model-size tiny
 
-# 导出所有量化版本
-uv run src/export_mobile.py --model-size small --all
+# 导出 base 模型
+uv run src/export_mobile.py --model-size base
 ```
 
 ---
@@ -250,8 +250,7 @@ uv run src/train.py --model-size small \
 |---------|------|---------|
 | float32 | 24 MB | 基准 |
 | FP16 | 12 MB | -50% |
-| int8 + HQQ | 9 MB | -62% |
-| int4 | 6.5 MB | -73% |
+| int8 | 8 MB | -66% |
 
 ### 推荐部署方案
 
@@ -260,10 +259,10 @@ uv run src/train.py --model-size small \
 # 训练
 uv run src/train.py --model-size small --use-prepared-data
 
-# 导出 int8 量化
+# 导出 ONNX
 uv run src/export_mobile.py --model-size small
 
-# 部署文件: mobile/small/model_q8_hqq.mnn (9 MB)
+# 部署文件: mobile/small/model.onnx (24 MB)
 ```
 
 **低端手机 (推荐 tiny 模型):**
@@ -271,10 +270,10 @@ uv run src/export_mobile.py --model-size small
 # 训练
 uv run src/train.py --model-size tiny --use-prepared-data
 
-# 导出 int4 量化
-uv run src/export_mobile.py --model-size tiny --quant-bits 4
+# 导出 ONNX
+uv run src/export_mobile.py --model-size tiny
 
-# 部署文件: mobile/tiny/model_q4.mnn (2 MB)
+# 部署文件: mobile/tiny/model.onnx (8 MB)
 ```
 
 **PC/服务器 (base 模型):**
@@ -282,10 +281,10 @@ uv run src/export_mobile.py --model-size tiny --quant-bits 4
 # 训练
 uv run src/train.py --model-size base --use-prepared-data
 
-# 导出 FP16 或 int8
-uv run src/export_mobile.py --model-size base --fp16
+# 导出 ONNX
+uv run src/export_mobile.py --model-size base
 
-# 部署文件: mobile/base/model_fp16.mnn (40 MB)
+# 部署文件: mobile/base/model.onnx (80 MB)
 ```
 
 ---
@@ -309,9 +308,7 @@ output/
 
 mobile/
 ├── tiny/
-│   ├── model_q8_hqq.mnn
-│   ├── model_q4.mnn
-│   ├── model_fp16.mnn
+│   ├── model.onnx
 │   └── vocab.json
 ├── small/
 ├── medium/
@@ -325,23 +322,23 @@ mobile/
 
 ### 推理速度 (Android)
 
-| 模型 | float32 | int8 + HQQ | int4 |
-|-----|---------|-----------|------|
-| tiny | 8 ms | 5 ms | 4 ms |
-| small | 12 ms | 7 ms | 6 ms |
-| medium | 18 ms | 10 ms | 8 ms |
-| base | 25 ms | 14 ms | 11 ms |
-| large | 40 ms | 22 ms | 18 ms |
+| 模型 | float32 | int8 |
+|-----|---------|------|
+| tiny | 8 ms | 5 ms |
+| small | 12 ms | 7 ms |
+| medium | 18 ms | 10 ms |
+| base | 25 ms | 14 ms |
+| large | 40 ms | 22 ms |
 
 ### 内存占用
 
-| 模型 | float32 | int8 | int4 |
-|-----|---------|------|------|
-| tiny | 20 MB | 12 MB | 8 MB |
-| small | 40 MB | 25 MB | 18 MB |
-| medium | 70 MB | 45 MB | 32 MB |
-| base | 100 MB | 65 MB | 45 MB |
-| large | 180 MB | 110 MB | 80 MB |
+| 模型 | float32 | int8 |
+|-----|---------|------|
+| tiny | 20 MB | 12 MB |
+| small | 40 MB | 25 MB |
+| medium | 70 MB | 45 MB |
+| base | 100 MB | 65 MB |
+| large | 180 MB | 110 MB |
 
 ---
 
@@ -397,10 +394,10 @@ uv run src/train.py --model-size base --use-prepared-data
 
 | 场景 | 推荐模型 | 训练命令 | 导出命令 |
 |-----|---------|---------|---------|
-| 低端手机 | tiny | `--model-size tiny` | `--model-size tiny --quant-bits 4` |
+| 低端手机 | tiny | `--model-size tiny` | `--model-size tiny` |
 | 普通手机 | small | `--model-size small` | `--model-size small` |
 | 高端手机 | medium | `--model-size medium` | `--model-size medium` |
-| PC/服务器 | base | `--model-size base` | `--model-size base --fp16` |
+| PC/服务器 | base | `--model-size base` | `--model-size base` |
 | 追求精度 | large | `--model-size large` | `--model-size large` |
 
-**推荐**: 大多数场景使用 **small** 模型 + **int8 量化**
+**推荐**: 大多数场景使用 **small** 模型

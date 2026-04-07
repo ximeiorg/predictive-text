@@ -1008,6 +1008,46 @@ wheels = [
 ]
 
 [[package]]
+name = "predictive-text"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "numpy" },
+    { name = "opencc" },
+    { name = "pandas" },
+    { name = "pyarrow" },
+    { name = "tensorboard" },
+    { name = "tokenizers" },
+    { name = "torch" },
+    { name = "tqdm" },
+    { name = "wikiextractor" },
+]
+
+[package.optional-dependencies]
+mobile = [
+    { name = "mnn" },
+    { name = "onnx" },
+    { name = "onnxruntime" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mnn", marker = "extra == 'mobile'", specifier = ">=1.1.0" },
+    { name = "numpy", specifier = ">=1.24.0" },
+    { name = "onnx", marker = "extra == 'mobile'", specifier = ">=1.15.0" },
+    { name = "onnxruntime", marker = "extra == 'mobile'", specifier = ">=1.16.0" },
+    { name = "opencc", specifier = ">=1.0.0" },
+    { name = "pandas", specifier = ">=2.0.0" },
+    { name = "pyarrow", specifier = ">=14.0.0" },
+    { name = "tensorboard", specifier = ">=2.20.0" },
+    { name = "tokenizers", specifier = ">=0.15.0" },
+    { name = "torch", specifier = ">=2.0.0" },
+    { name = "tqdm", specifier = ">=4.65.0" },
+    { name = "wikiextractor", specifier = ">=3.0.0" },
+]
+provides-extras = ["mobile"]
+
+[[package]]
 name = "protobuf"
 version = "7.34.1"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
@@ -1387,43 +1427,3 @@ sdist = { url = "https://mirrors.aliyun.com/pypi/packages/8e/6c/21050e72c7e42f60
 wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/3f/37/b110fd8a87bab4120ff55061c508361bd1b012d789ff469af8fbd7cc3a38/wikiextractor-3.0.6-py3-none-any.whl", hash = "sha256:f4506990bf9c14e3cc92dc85a0a89554fef975cc1b28dcb9a4d31c73a8ef2133" },
 ]
-
-[[package]]
-name = "wubi-lianxiang"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "numpy" },
-    { name = "opencc" },
-    { name = "pandas" },
-    { name = "pyarrow" },
-    { name = "tensorboard" },
-    { name = "tokenizers" },
-    { name = "torch" },
-    { name = "tqdm" },
-    { name = "wikiextractor" },
-]
-
-[package.optional-dependencies]
-mobile = [
-    { name = "mnn" },
-    { name = "onnx" },
-    { name = "onnxruntime" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "mnn", marker = "extra == 'mobile'", specifier = ">=1.1.0" },
-    { name = "numpy", specifier = ">=1.24.0" },
-    { name = "onnx", marker = "extra == 'mobile'", specifier = ">=1.15.0" },
-    { name = "onnxruntime", marker = "extra == 'mobile'", specifier = ">=1.16.0" },
-    { name = "opencc", specifier = ">=1.0.0" },
-    { name = "pandas", specifier = ">=2.0.0" },
-    { name = "pyarrow", specifier = ">=14.0.0" },
-    { name = "tensorboard", specifier = ">=2.20.0" },
-    { name = "tokenizers", specifier = ">=0.15.0" },
-    { name = "torch", specifier = ">=2.0.0" },
-    { name = "tqdm", specifier = ">=4.65.0" },
-    { name = "wikiextractor", specifier = ">=3.0.0" },
-]
-provides-extras = ["mobile"]

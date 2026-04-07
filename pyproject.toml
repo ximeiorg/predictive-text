@@ -1,7 +1,7 @@
 [project]
-name = "wubi-lianxiang"
+name = "predictive-text"
 version = "0.1.0"
-description = "Lightweight Decoder-Only Transformer for input method prediction"
+description = "Lightweight Transformer for Chinese predictive text input"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -20,7 +20,6 @@ dependencies = [
 mobile = [
     "onnx>=1.15.0",
     "onnxruntime>=1.16.0",
-    "mnn>=1.1.0",
 ]
 
 [project.scripts]

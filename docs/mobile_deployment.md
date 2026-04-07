@@ -2,13 +2,12 @@
 
 ## 方案对比
 
-| 方案 | 性能 | 内存 | int8 | int4 | 推荐度 |
-|-----|------|-----|------|------|-------|
-| **MNN** | 最快 | 最小 | ✅ | ✅ | ⭐⭐⭐⭐⭐ |
-| ONNX Runtime | 中等 | 中等 | ✅ | ❌ | ⭐⭐⭐ |
-| PyTorch Mobile | 慢 | 大 | ✅ | ❌ | ⭐⭐ |
+| 方案 | 性能 | 内存 | int8 | 推荐度 |
+|-----|------|-----|------|-------|
+| **ONNX Runtime** | 快 | 小 | ✅ | ⭐⭐⭐⭐⭐ |
+| PyTorch Mobile | 中等 | 中等 | ✅ | ⭐⭐⭐ |
 
-**推荐 MNN**：阿里开源，专为移动端优化，输入法广泛使用。
+**推荐 ONNX Runtime**：跨平台支持好，性能优秀，易于集成。
 
 ---
 
@@ -27,42 +26,19 @@ uv sync --extra mobile
 pip install onnx onnxruntime
 ```
 
-### 2. 安装 MNN 工具
+### 2. 导出模型
 
 ```bash
-# 方式一：预编译版本 (推荐)
-# 从 https://github.com/alibaba/MNN/releases 下载
-
-# 方式二：源码编译
-git clone https://github.com/alibaba/MNN.git
-cd MNN
-cmake -DMNN_BUILD_CONVERTER=ON .
-make -j4
-cp tools/converter/MNNConvert /usr/local/bin/
-```
-
-### 3. 导出模型
-
-```bash
-# 导出 MNN int8 模型 (推荐)
+# 导出 ONNX 模型
 uv run src/export_mobile.py \
     --checkpoint output/best_model.pt \
-    --vocab data/vocab.json \
-    --output-dir mobile \
-    --format mnn \
-    --quant-bits 8
+    --output-dir mobile
 
-# 导出 int4 模型 (更小体积)
-uv run src/export_mobile.py --quant-bits 4
-
-# 导出所有格式
-uv run src/export_mobile.py --format all
-
-# 仅导出 ONNX (MNN工具不可用时)
-uv run src/export_mobile.py --format onnx
+# 指定模型尺寸导出
+uv run src/export_mobile.py --model-size small
 ```
 
-### 4. 校准量化 (效果更好)
+### 3. 校准量化 (效果更好)
 
 ```bash
 # 使用校准数据的静态量化
@@ -82,10 +58,7 @@ uv run scripts/quantize_with_calibration.py \
 
 ```
 mobile/
-├── model_q8.mnn      # MNN int8 模型 (推荐)
-├── model_q4.mnn      # MNN int4 模型 (可选)
 ├── model.onnx        # ONNX float32 模型
-├── model_q8.onnx     # ONNX int8 模型
 ├── vocab.json        # 词表 JSON
 ├── vocab.txt         # 词表文本
 ├── manifest.json     # 元信息
@@ -94,46 +67,45 @@ mobile/
 
 ---
 
-## Android 部署 (MNN)
+## Android 部署 (ONNX Runtime)
 
-### 1. 添加 MNN 依赖
+### 1. 添加 ONNX Runtime 依赖
 
 ```gradle
 // app/build.gradle
 dependencies {
-    implementation 'com.alibaba.android:mnn:1.1.0'
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.16.0'
 }
 ```
 
 ### 2. 加载模型
 
 ```kotlin
-import com.alibaba.android.mnn.MNNInterpreter
+import ai.onnxruntime.OrtEnvironment
+import ai.onnxruntime.OrtSession
 
 class InputMethodModel(context: Context) {
-    private val interpreter: MNNInterpreter
+    private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
+    private val session: OrtSession
     
     init {
         // 从 assets 加载
-        val modelPath = context.assets.open("model_q8.mnn").let {
-            val file = File(context.cacheDir, "model_q8.mnn")
+        val modelPath = context.assets.open("model.onnx").let {
+            val file = File(context.cacheDir, "model.onnx")
             it.copyTo(file.outputStream())
             file.absolutePath
         }
-        interpreter = MNNInterpreter.createFromFile(modelPath)
+        session = env.createSession(modelPath)
     }
     
     fun predict(inputIds: IntArray): IntArray {
-        val session = interpreter.createSession()
-        val inputTensor = interpreter.createInputTensor(inputIds)
+        val inputTensor = OnnxTensor.createTensor(env, inputIds.toLongArray())
+        val results = session.run(mapOf("input_ids" to inputTensor))
         
-        interpreter.runSession(session, inputTensor)
-        
-        val outputTensor = interpreter.getOutputTensor(session, 0)
-        val logits = outputTensor.getFloatData()
+        val logits = results.get(0).value as Array<FloatArray>
         
         // 取最后一个位置的 top-5
-        val lastLogits = logits.takeLast(vocabSize)
+        val lastLogits = logits[0].last()
         return lastLogits.indices.sortedByDescending { lastLogits[it] }.take(5)
     }
 }
@@ -166,30 +138,33 @@ class Vocabulary(context: Context) {
 
 ---
 
-## iOS 部署 (MNN)
+## iOS 部署 (ONNX Runtime)
 
-### 1. 添加 MNN 框架
+### 1. 添加 ONNX Runtime 框架
 
 ```swift
 // Podfile
-pod 'MNN', '~> 1.1.0'
+pod 'onnxruntime-objc', '~> 1.16.0'
 ```
 
 ### 2. 加载模型
 
 ```swift
-import MNN
+import onnxruntime_objc
 
 class InputMethodModel {
-    private let interpreter: MNNInterpreter
+    private let session: ORTSession
+    private let env: ORTEnvironment
     private let vocab: [String: Int]
     
     init() {
-        guard let modelPath = Bundle.main.path(forResource: "model_q8", ofType: "mnn") else {
+        env = ORTEnvironment()
+        
+        guard let modelPath = Bundle.main.path(forResource: "model", ofType: "onnx") else {
             fatalError("Model not found")
         }
         
-        interpreter = MNNInterpreter(file: modelPath)
+        session = try! ORTSession(path: modelPath, environment: env)
         
         // 加载词表
         guard let vocabPath = Bundle.main.path(forResource: "vocab", ofType: "json") else {
@@ -202,17 +177,17 @@ class InputMethodModel {
     func predict(inputText: String) -> [String] {
         let inputIds = encode(inputText)
         
-        let session = interpreter.createSession()
-        let inputTensor = interpreter.createInputTensor(inputIds)
+        let inputTensor = try! ORTValue(tensorData: inputIds.toData(), 
+                                         elementType: .int64, 
+                                         shape: [1, inputIds.count])
         
-        interpreter.runSession(session, inputTensor)
+        let outputs = try! session.run(withInputs: ["input_ids": inputTensor], 
+                                        outputNames: ["logits"])
         
-        let output = interpreter.getOutputTensor(session, 0)
-        let logits = output.getData() as! [Float]
+        let logits = outputs["logits"]!.tensorData as! [Float]
         
         // 获取 top-5 建议词
-        let lastPosLogits = logits.suffix(vocabSize)
-        let topIndices = lastPosLogits.enumerated()
+        let topIndices = logits.enumerated()
             .sorted { $0.element > $1.element }
             .prefix(5)
             .map { $0.offset }
@@ -230,11 +205,10 @@ class InputMethodModel {
 
 | 格式 | 模型大小 | 推理时间 | 内存占用 |
 |-----|---------|---------|---------|
-| float32 | ~24 MB | ~50ms | ~100 MB |
-| int8 (MNN) | ~6 MB | ~20ms | ~30 MB |
-| int4 (MNN) | ~3 MB | ~25ms | ~20 MB |
+| float32 | ~24 MB | ~30ms | ~80 MB |
+| int8 (ONNX) | ~8 MB | ~15ms | ~40 MB |
 
-**int8量化效果**：体积减少75%，速度提升2-3倍，精度损失<2%
+**int8量化效果**：体积减少66%，速度提升2倍，精度损失<2%
 
 ---
 
@@ -255,7 +229,7 @@ class InputMethodModel {
 │      ↓ [1, 234, 567, 890]                   │
 │  ┌─────────────────┐                        │
 │  │   模型推理       │                        │
-│  │  MNN / ONNX     │                        │
+│  │  ONNX Runtime   │                        │
 │  └─────────────────┘                        │
 │      ↓ logits [vocab_size]                  │
 │  ┌─────────────────┐                        │
@@ -278,14 +252,14 @@ class InputMethodModel {
 
 ## 常见问题
 
-**Q: MNNConvert 找不到？**
-A: 从 MNN releases 下载或源码编译
+**Q: ONNX Runtime 性能如何？**
+A: 在移动端性能优秀，支持 GPU 加速
 
-**Q: int4 量化精度损失？**
-A: 对于词语联想任务，int4 通常可接受。建议测试对比。
+**Q: int8 量化精度损失？**
+A: 对于词语联想任务，int8 通常可接受。建议测试对比。
 
 **Q: Android JNI 错误？**
-A: 确保 MNN AAR 版本与模型版本匹配
+A: 确保 ONNX Runtime 版本正确，检查 ABI 配置
 
 **Q: iOS 编译错误？**
-A: 检查 MNN framework 是否正确链接
+A: 检查 CocoaPods 安装，确保 framework 正确链接
