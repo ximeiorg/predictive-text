@@ -17,7 +17,7 @@ torch.serialization.add_safe_globals([ModelConfig])
 
 
 def export_onnx(checkpoint_path, output_path, max_seq_len=32):
-    """导出 PyTorch 模型到 ONNX"""
+    """导出 PyTorch 模型到 ONNX（支持动态序列长度）"""
     print(f"\n加载模型: {checkpoint_path}")
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     config = checkpoint.get("config", ModelConfig())
@@ -57,21 +57,19 @@ def export_onnx(checkpoint_path, output_path, max_seq_len=32):
         opset_version=17,
     )
 
-    # 检查文件大小
-    onnx_size = Path(output_path).stat().st_size / (1024**2)
+    size_mb = Path(output_path).stat().st_size / (1024**2)
     data_path = Path(str(output_path) + ".data")
     if data_path.exists():
         data_size = data_path.stat().st_size / (1024**2)
-        print(f"ONNX: {onnx_size:.1f} MB + 数据: {data_size:.1f} MB")
+        print(f"ONNX: {size_mb:.1f} MB + 数据: {data_size:.1f} MB")
     else:
-        print(f"ONNX: {onnx_size:.1f} MB")
+        print(f"ONNX: {size_mb:.1f} MB")
 
     return output_path
 
 
 def convert_to_mnn(onnx_path, mnn_path, quant_bits=8, use_hqq=False):
     """转换 ONNX 到 MNN"""
-    # 查找 MNNConvert
     mnnconvert = shutil.which("MNNConvert")
     if not mnnconvert:
         mnnconvert = str(Path.home() / ".local/bin/MNNConvert")
@@ -104,13 +102,25 @@ def convert_to_mnn(onnx_path, mnn_path, quant_bits=8, use_hqq=False):
 
     result = subprocess.run(cmd, capture_output=True, text=True)
 
-    if result.returncode == 0:
-        size_mb = Path(mnn_path).stat().st_size / (1024**2)
-        print(f"✓ MNN: {mnn_path} ({size_mb:.1f} MB)")
-        return True
-    else:
-        print(f"❌ 转换失败: {result.stderr}")
+    if result.returncode != 0:
+        print(f"❌ 转换失败 (返回码: {result.returncode})")
+        if result.stdout:
+            print(f"stdout: {result.stdout}")
+        if result.stderr:
+            print(f"stderr: {result.stderr}")
         return False
+
+    if not Path(mnn_path).exists():
+        print(f"❌ 转换失败: 文件未生成 {mnn_path}")
+        if result.stdout:
+            print(f"stdout: {result.stdout}")
+        if result.stderr:
+            print(f"stderr: {result.stderr}")
+        return False
+
+    size_mb = Path(mnn_path).stat().st_size / (1024**2)
+    print(f"✓ MNN: {mnn_path} ({size_mb:.1f} MB)")
+    return True
 
 
 def verify_onnx(onnx_path):
@@ -124,25 +134,26 @@ def verify_onnx(onnx_path):
     print("\n验证 ONNX...")
     session = ort.InferenceSession(onnx_path)
 
-    # 打印信息
     for inp in session.get_inputs():
         print(f"  输入: {inp.name} {inp.shape}")
     for out in session.get_outputs():
         print(f"  输出: {out.name} {out.shape}")
 
-    # 测试推理
     input_name = session.get_inputs()[0].name
+
     test_input = np.array([[1, 100, 200, 300]], dtype=np.int64)
     outputs = session.run(None, {input_name: test_input})
+    print(f"  测试推理 (seq=4): {test_input.shape} → {outputs[0].shape}")
 
-    print(f"  测试推理: {test_input.shape} → {outputs[0].shape}")
+    test_input2 = np.array([[1, 100]], dtype=np.int64)
+    outputs2 = session.run(None, {input_name: test_input2})
+    print(f"  测试推理 (seq=2): {test_input2.shape} → {outputs2[0].shape}")
 
-    # 检查输出
     last_logits = outputs[0][0, -1, :]
     top5 = np.argsort(last_logits)[-5:][::-1]
     print(f"  Top-5: {top5.tolist()}")
 
-    print("✓ ONNX 验证通过")
+    print("✓ ONNX 验证通过（支持动态序列长度）")
     return True
 
 
@@ -230,6 +241,7 @@ def main():
 
     # 导出词表
     vocab_src = Path("data/vocab.json")
+    vocab = None
     if vocab_src.exists():
         vocab_dst = output_dir / "vocab.json"
         shutil.copy(vocab_src, vocab_dst)
@@ -248,7 +260,7 @@ def main():
     # 创建 manifest
     manifest = {
         "model": args.model_size,
-        "vocab_size": len(vocab) if vocab_src.exists() else 8000,
+        "vocab_size": len(vocab) if vocab else 8000,
         "models": {k: Path(v).stat().st_size / (1024**2) for k, v in models.items()},
     }
     with open(output_dir / "manifest.json", "w") as f:
