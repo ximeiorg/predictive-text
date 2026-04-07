@@ -4,34 +4,33 @@
 import torch
 import torch.nn.functional as F
 import json
-import sentencepiece as spm
 from pathlib import Path
 import argparse
+from tokenizers import Tokenizer
 from src.config import ModelConfig
 from src.model.transformer import create_model
 
 
-class CandidateTokenizer:
-    """联想候选专用tokenizer"""
+class BPETokenizer:
+    """BPE tokenizer wrapper using HuggingFace tokenizers."""
 
-    def __init__(self, vocab_path: str, spm_path: str = "data/spm.model"):
-        with open(vocab_path, "r", encoding="utf-8") as f:
-            self.word2id = json.load(f)
-        self.id2word = {v: k for k, v in self.word2id.items()}
-        self.vocab_size = len(self.word2id)
-
-        self.sp = spm.SentencePieceProcessor(model_file=spm_path)
-
-        self.pad_id = self.sp.pad_id()
-        self.bos_id = self.sp.bos_id()
-        self.eos_id = self.sp.eos_id()
-        self.unk_id = self.sp.unk_id()
+    def __init__(self, tokenizer_path: str):
+        self.tokenizer = Tokenizer.from_file(tokenizer_path)
+        self.vocab_size = self.tokenizer.get_vocab_size()
+        
+        self.pad_id = self.tokenizer.token_to_id("[PAD]")
+        self.bos_id = self.tokenizer.token_to_id("[BOS]")
+        self.eos_id = self.tokenizer.token_to_id("[EOS]")
+        self.unk_id = self.tokenizer.token_to_id("[UNK]")
 
     def encode(self, text: str):
-        return self.sp.encode(text, out_type=int)
+        """Encode text to token ids."""
+        encoding = self.tokenizer.encode(text)
+        return encoding.ids
 
     def decode(self, ids: list):
-        return self.sp.decode(ids)
+        """Decode token ids to text."""
+        return self.tokenizer.decode(ids)
 
 
 def load_model(checkpoint_path: str, device: str = "auto"):
@@ -85,7 +84,8 @@ def get_next_token_candidates(
         candidates = []
         for prob, token_id in zip(top_probs.tolist(), top_ids.tolist()):
             token_str = tokenizer.decode([token_id])
-            if token_str not in ["<pad>", "<s>", "</s>", "<unk>"]:
+            # 过滤特殊 token
+            if token_str not in ["[PAD]", "[BOS]", "[EOS]", "[UNK]", "<pad>", "<s>", "</s>", "<unk>"]:
                 candidates.append((token_str, prob, token_id))
 
         return candidates
@@ -298,10 +298,7 @@ def main():
         help="模型checkpoint路径",
     )
     parser.add_argument(
-        "--vocab", type=str, default="data/vocab.json", help="词汇表文件"
-    )
-    parser.add_argument(
-        "--spm", type=str, default="data/spm.model", help="SentencePiece模型文件"
+        "--tokenizer", type=str, default="data/tokenizer.json", help="Tokenizer文件"
     )
     parser.add_argument(
         "--device", type=str, default="auto", help="设备 (auto/cpu/cuda/mps)"
@@ -311,23 +308,19 @@ def main():
 
     if not Path(args.checkpoint).exists():
         print(f"❌ 模型文件不存在: {args.checkpoint}")
-        print("   请先训练模型: python -m src.train --use-prepared-data")
+        print("   请先训练模型: uv run src/train.py --use-prepared-data")
         return
 
-    if not Path(args.vocab).exists():
-        print(f"❌ 词汇表不存在: {args.vocab}")
-        return
-
-    if not Path(args.spm).exists():
-        print(f"❌ SentencePiece模型不存在: {args.spm}")
+    if not Path(args.tokenizer).exists():
+        print(f"❌ Tokenizer 不存在: {args.tokenizer}")
         return
 
     print(f"📦 加载模型: {args.checkpoint}")
     model, device = load_model(args.checkpoint, args.device)
     print(f"✓ 设备: {device}")
 
-    print(f"📦 加载词汇表和tokenizer...")
-    tokenizer = CandidateTokenizer(args.vocab, args.spm)
+    print(f"📦 加载 tokenizer...")
+    tokenizer = BPETokenizer(args.tokenizer)
     print(f"✓ 词汇表大小: {tokenizer.vocab_size}")
 
     interactive_mode(model, tokenizer, device)

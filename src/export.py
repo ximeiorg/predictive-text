@@ -3,9 +3,10 @@
 import torch
 import torch.onnx
 import torch.serialization
-import sentencepiece as spm
+import json
 from pathlib import Path
 import argparse
+from tokenizers import Tokenizer
 
 from src.config import ModelConfig
 from src.model.transformer import create_model
@@ -13,8 +14,8 @@ from src.model.transformer import create_model
 torch.serialization.add_safe_globals([ModelConfig])
 
 
-def export_to_onnx(checkpoint_path: str, output_path: str, vocab_path: str, max_seq_len: int = 32):
-    checkpoint = torch.load(checkpoint_path, map_location='cpu')
+def export_to_onnx(checkpoint_path: str, output_path: str, tokenizer_path: str, max_seq_len: int = 32):
+    checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
     config = checkpoint.get('config', ModelConfig())
     
     model = create_model(config)
@@ -38,19 +39,20 @@ def export_to_onnx(checkpoint_path: str, output_path: str, vocab_path: str, max_
     
     print(f"Model exported to {output_path}")
     
-    sp = spm.SentencePieceProcessor()
-    sp.load(vocab_path)
+    # 导出词汇表
+    tokenizer = Tokenizer.from_file(tokenizer_path)
     
     vocab_txt_path = Path(output_path).parent / "vocab.txt"
     with open(vocab_txt_path, 'w', encoding='utf-8') as f:
-        for i in range(sp.get_piece_size()):
-            f.write(sp.id_to_piece(i) + '\n')
+        for i in range(tokenizer.get_vocab_size()):
+            token = tokenizer.id_to_token(i)
+            f.write(token + '\n')
     
     print(f"Vocabulary exported to {vocab_txt_path}")
 
 
 def export_quantized(checkpoint_path: str, output_path: str):
-    checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=True)
+    checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
     config = checkpoint.get('config', ModelConfig())
     
     model = create_model(config)
@@ -85,7 +87,7 @@ def export_quantized(checkpoint_path: str, output_path: str):
 def main():
     parser = argparse.ArgumentParser(description="Export model for mobile deployment")
     parser.add_argument("--checkpoint", type=str, default="output/best_model.pt", help="Model checkpoint")
-    parser.add_argument("--vocab", type=str, default="data/vocab.model", help="Vocabulary file")
+    parser.add_argument("--tokenizer", type=str, default="data/tokenizer.json", help="Tokenizer file")
     parser.add_argument("--output-dir", type=str, default="mobile", help="Output directory")
     parser.add_argument("--format", type=str, choices=['onnx', 'quantized', 'both'], default='both', help="Export format")
     
@@ -96,7 +98,7 @@ def main():
     
     if args.format in ['onnx', 'both']:
         onnx_path = output_dir / "model.onnx"
-        export_to_onnx(args.checkpoint, str(onnx_path), args.vocab)
+        export_to_onnx(args.checkpoint, str(onnx_path), args.tokenizer)
     
     if args.format in ['quantized', 'both']:
         quantized_path = output_dir / "model_quantized.pt"

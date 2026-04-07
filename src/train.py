@@ -135,12 +135,25 @@ def main():
   base   - ~20M 参数, 80 MB (默认，PC/服务器)
   large  - ~40M 参数, 160 MB (追求精度)
 
+训练参数自动优化:
+  tiny:   lr=6e-4, epochs=20, label_smooth=0.1
+  small:  lr=5e-4, epochs=25, label_smooth=0.1
+  medium: lr=4e-4, epochs=18
+  base:   lr=3e-4, epochs=15
+  large:  lr=2e-4, epochs=15
+
 示例:
-  # 使用 small 模型训练
+  # 训练 small 模型 (自动使用优化参数)
   uv run src/train.py --model-size small --use-prepared-data
 
-  # 使用 tiny 模型训练
-  uv run src/train.py --model-size tiny --use-prepared-data --epochs 15
+  # 训练 tiny 模型
+  uv run src/train.py --model-size tiny --use-prepared-data
+
+  # 自定义参数
+  uv run src/train.py --model-size small --lr 8e-4 --epochs 30 --use-prepared-data
+
+  # 训练后自动评估
+  uv run src/train.py --model-size small --use-prepared-data --eval-after-train
 
   # 查看所有可用配置
   python -c "from src.config import list_model_sizes; list_model_sizes()"
@@ -158,7 +171,7 @@ def main():
         "--batch-size", type=int, default=None, help="Batch size (auto if not set)"
     )
     parser.add_argument(
-        "--epochs", type=int, default=None, help="Number of epochs (auto if not set)"
+        "--epochs", type=int, default=10, help="Number of epochs (auto if not set)"
     )
     parser.add_argument(
         "--lr", type=float, default=None, help="Learning rate (auto if not set)"
@@ -194,6 +207,11 @@ def main():
         "--list-sizes",
         action="store_true",
         help="List all available model sizes and exit",
+    )
+    parser.add_argument(
+        "--eval-after-train",
+        action="store_true",
+        help="Run evaluation after training completes",
     )
 
     args = parser.parse_args()
@@ -243,9 +261,28 @@ def main():
     data_dir = Path("data")
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    training_config = TrainingConfig(
-        batch_size=batch_size, learning_rate=learning_rate, num_epochs=num_epochs
-    )
+    # 使用优化的训练配置
+    training_config = TrainingConfig.for_model_size(args.model_size)
+
+    # 允许命令行覆盖
+    if args.batch_size:
+        training_config.batch_size = batch_size
+    if args.lr:
+        training_config.learning_rate = learning_rate
+    if args.epochs:
+        training_config.num_epochs = num_epochs
+
+    # 显示完整的训练配置
+    print("训练配置:")
+    print(f"  Batch Size:      {training_config.batch_size}")
+    print(f"  Learning Rate:   {training_config.learning_rate}")
+    print(f"  Epochs:          {training_config.num_epochs}")
+    print(f"  Warmup Steps:    {training_config.warmup_steps}")
+    print(f"  Max Grad Norm:   {training_config.max_grad_norm}")
+    print(f"  Label Smoothing: {training_config.label_smoothing}")
+    print(f"  Weight Decay:    {training_config.weight_decay}")
+    print(f"  Min LR:          {training_config.min_lr}")
+    print()
 
     vocab_path = data_dir / "vocab.json"
     train_data_path = data_dir / "train.bin"
@@ -304,12 +341,17 @@ def main():
     print(f"Model parameters: {num_params:,} ({num_params / 1e6:.2f}M)")
 
     optimizer = AdamW(
-        model.parameters(), lr=training_config.learning_rate, weight_decay=0.01
+        model.parameters(),
+        lr=training_config.learning_rate,
+        weight_decay=training_config.weight_decay,
     )
 
     total_steps = len(train_loader) * training_config.num_epochs
     scheduler = get_cosine_warmup_scheduler(
-        optimizer, warmup_steps=training_config.warmup_steps, total_steps=total_steps
+        optimizer,
+        warmup_steps=training_config.warmup_steps,
+        total_steps=total_steps,
+        min_lr=training_config.min_lr,
     )
 
     # TensorBoard
@@ -375,6 +417,45 @@ def main():
 
     print("Training completed!")
     writer.close()
+
+    # 训练后自动评估
+    if args.eval_after_train:
+        print("\n" + "=" * 60)
+        print("运行训练后评估...")
+        print("=" * 60)
+
+        import subprocess
+        import sys
+
+        eval_cmd = [
+            sys.executable,
+            "src/evaluate.py",
+            "--model-size",
+            args.model_size,
+            "--data-path",
+            str(val_data_path),
+            "--vocab-path",
+            str(vocab_path),
+            "--max-samples",
+            "2000",
+            "--output",
+            str(output_dir / "evaluation_report.json"),
+        ]
+
+        subprocess.run(eval_cmd)
+
+    print("\n" + "=" * 60)
+    print("训练完成!")
+    print("=" * 60)
+    print(f"模型保存在: {output_dir}")
+    print(f"最佳模型: {output_dir / 'best_model.pt'}")
+    print(f"\n下一步:")
+    print(f"  评估模型: uv run src/evaluate.py --model-size {args.model_size}")
+    print(
+        f"  推理测试: uv run src/inference.py --model-size {args.model_size} --interactive"
+    )
+    print(f"  导出MNN:  uv run src/export_mobile.py --model-size {args.model_size}")
+    print("=" * 60)
 
 
 if __name__ == "__main__":

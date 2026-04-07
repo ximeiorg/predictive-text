@@ -40,19 +40,21 @@ class ModelConfig:
 
     @classmethod
     def small(cls) -> "ModelConfig":
-        """Small 模型 - 小型 (~6M 参数)
+        """Small 模型 - 小型 (~8M 参数)
 
         适用场景:
         - 普通手机
         - 体积和速度平衡
         - 输入法联想
+
+        优化: 增加模型容量，平衡 Embedding/Transformer 比例
         """
         return cls(
             vocab_size=8000,
-            hidden_dim=256,
+            hidden_dim=320,  # 256 → 320 (+25%)
             num_heads=4,
-            num_layers=4,
-            ffn_dim=512,
+            num_layers=6,  # 4 → 6 (+50%)
+            ffn_dim=1024,  # 512 → 1024 (+100%)
             max_seq_len=64,
             dropout=0.1,
         )
@@ -257,39 +259,68 @@ class TrainingConfig:
     save_steps: int = 5000
     eval_steps: int = 1000
     log_steps: int = 100
+    weight_decay: float = 0.01
+    min_lr: float = 1e-5
 
     @classmethod
     def for_model_size(cls, model_size: str) -> "TrainingConfig":
-        """根据模型尺寸自动调整训练配置"""
+        """根据模型尺寸自动调整训练配置 - 优化版"""
         if model_size == "tiny":
+            # Tiny: 高学习率，更多 epoch
             return cls(
                 batch_size=512,
-                learning_rate=5e-4,
-                num_epochs=15,
+                learning_rate=6e-4,
+                num_epochs=20,
+                warmup_steps=200,
+                max_grad_norm=0.5,
+                label_smoothing=0.1,
+                weight_decay=0.01,
+                min_lr=1e-6,
             )
         elif model_size == "small":
+            # Small: 优化配置，突破瓶颈
             return cls(
                 batch_size=384,
-                learning_rate=4e-4,
-                num_epochs=12,
+                learning_rate=5e-4,
+                num_epochs=25,
+                warmup_steps=300,
+                max_grad_norm=0.5,
+                label_smoothing=0.1,
+                weight_decay=0.01,
+                min_lr=1e-6,
             )
         elif model_size == "medium":
             return cls(
                 batch_size=320,
-                learning_rate=3e-4,
-                num_epochs=10,
+                learning_rate=4e-4,
+                num_epochs=18,
+                warmup_steps=200,
+                max_grad_norm=0.8,
+                label_smoothing=0.05,
+                weight_decay=0.01,
+                min_lr=1e-6,
             )
         elif model_size == "large":
             return cls(
                 batch_size=192,
                 learning_rate=2e-4,
                 num_epochs=15,
+                warmup_steps=150,
+                max_grad_norm=1.0,
+                label_smoothing=0.05,
+                weight_decay=0.01,
+                min_lr=1e-6,
             )
         else:  # base
             return cls(
                 batch_size=256,
                 learning_rate=3e-4,
-                num_epochs=10,
+                num_epochs=15,
+                warmup_steps=100,
+                max_grad_norm=1.0,
+                label_smoothing=0.0,
+                weight_decay=0.01,
+                min_lr=1e-5,
             )
 
 
