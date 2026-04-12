@@ -2,6 +2,10 @@
 
 轻量级中文预测性文本输入模型，基于 Transformer 架构，支持 ONNX 部署。
 
+> 这是为 [https://github.com/ximeiorg/Kime](https://github.com/ximeiorg/Kime) 项目准备的联想词预测模型。
+
+> 目前效果还没达到满意，后续有时间再慢慢优化。
+
 ## 功能特性
 
 - 支持多种模型尺寸（tiny/small/medium/base/large）
