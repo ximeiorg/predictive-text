@@ -47,6 +47,20 @@ class DecoderTransformerLightningModule(L.LightningModule):
 
         return loss
 
+    def on_after_backward(self):
+        if self.global_step % 50 == 0:
+            total_norm = 0.0
+            for p in self.parameters():
+                if p.grad is not None:
+                    total_norm += p.grad.norm().item() ** 2
+            total_norm = total_norm ** 0.5
+            self.log("train/grad_norm", total_norm, prog_bar=True, on_step=True)
+
+            # Log per-layer norms
+            for name, p in self.named_parameters():
+                if p.grad is not None and p.dim() >= 2:
+                    self.log(f"grad/{name}", p.grad.norm().item(), on_step=True)
+
     def validation_step(self, batch, batch_idx):
         input_ids = batch["input_ids"]
         labels = batch["labels"]

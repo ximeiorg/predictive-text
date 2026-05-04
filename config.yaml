@@ -59,10 +59,10 @@ tiny:
 small:
   model:
     vocab_size: 5000
-    hidden_dim: 320
+    hidden_dim: 384
     num_heads: 4
-    num_layers: 6
-    ffn_dim: 1024
+    num_layers: 4
+    ffn_dim: 1536
     max_seq_len: 128
     dropout: 0.1
     label_smoothing: 0.15
@@ -70,7 +70,7 @@ small:
   training:
     batch_size: 512
     learning_rate: 0.001
-    num_epochs: 30
+    num_epochs: 2
     warmup_steps: 1000
     max_grad_norm: 1.0
     weight_decay: 0.01

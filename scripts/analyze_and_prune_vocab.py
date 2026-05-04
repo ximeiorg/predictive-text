@@ -79,15 +79,18 @@ def train_bpe_tokenizer(
     corpus_path: str,
     output_path: str,
     vocab_size: int,
-    max_lines: int = 500000,
+    max_lines: int = 1000000,
+    char_vocab_path: str = None,
 ):
-    """训练标准 BPE tokenizer（限 max_lines 行避免 OOM）"""
-    """训练标准 BPE tokenizer，ByteLevel 处理中文"""
+    """训练 BPE tokenizer（采样 + label 字符过滤）"""
     print(f"\n[1/4] 训练 BPE 词表 (初始大小: {vocab_size})...")
 
     total = count_lines_fast(corpus_path)
-    if total > max_lines:
-        print(f"  语料共 {total:,} 行，仅使用前 {max_lines:,} 行训练 BPE")
+
+    label_chars = set()
+    if char_vocab_path:
+        label_chars = load_chars_from_label(char_vocab_path)
+        print(f"  Label 字符数: {len(label_chars)}")
 
     special_tokens = ["[PAD]", "[BOS]", "[EOS]", "[UNK]"]
     tokenizer = Tokenizer(models.BPE(unk_token="[UNK]"))
@@ -101,25 +104,26 @@ def train_bpe_tokenizer(
         special_tokens=special_tokens,
         min_frequency=2,
         show_progress=True,
-        initial_alphabet=list(
-            "，。！？、0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        ),
+        initial_alphabet=list("，。！？、0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"),
     )
 
     def line_iter():
         with open(corpus_path, "r", encoding="utf-8") as f:
-            for line in f:
-                yield line.strip()
+            if total <= max_lines:
+                for line in f:
+                    if label_chars:
+                        line = "".join(c for c in line if c in label_chars or c.isspace())
+                    yield line.strip()
+            else:
+                sample_rate = max_lines / total
+                print(f"  语料共 {total:,} 行，随机采样 {max_lines:,} 行 (采样率 {sample_rate:.1%})")
+                for line in f:
+                    if random.random() < sample_rate:
+                        if label_chars:
+                            line = "".join(c for c in line if c in label_chars or c.isspace())
+                        yield line.strip()
 
-    if total <= max_lines:
-        tokenizer.train_from_iterator(line_iter(), trainer)
-    else:
-        sample_rate = max_lines / total
-        print(f"  语料共 {total:,} 行，随机采样 {max_lines:,} 行 (采样率 {sample_rate:.1%})")
-        tokenizer.train_from_iterator(
-            (line.strip() for line in line_iter() if random.random() < sample_rate),
-            trainer,
-        )
+    tokenizer.train_from_iterator(line_iter(), trainer)
     tokenizer.decoder = decoders.ByteLevel()
     tokenizer.save(str(output_path))
     print(f"BPE 词表已保存: {output_path} (大小: {tokenizer.get_vocab_size()})")
@@ -292,10 +296,7 @@ def build_pruned_vocab(vocab: dict[str, int], output_path: str) -> dict[str, int
     训练时使用 SimpleTokenizer 加载此文件，
     只做字符级拆分 + vocab 查表，准确且零依赖。
     """
-    import json
     print(f"\n[4/4] 保存剪枝后词表 (JSON)...")
-
-    add_ascii_chars(vocab)
 
     # 转成 {token: id} 格式
     with open(output_path, "w", encoding="utf-8") as f:
@@ -371,11 +372,11 @@ def main():
         "--output-dir", default="data", help="输出目录"
     )
     parser.add_argument(
-        "--initial-vocab-size", type=int, default=12000,
+        "--initial-vocab-size", type=int, default=20000,
         help="初始 BPE 词表大小 (默认 12000)"
     )
     parser.add_argument(
-        "--target-vocab-size", type=int, default=5000,
+        "--target-vocab-size", type=int, default=8000,
         help="剪枝目标大小 (默认 5000)"
     )
     parser.add_argument(
@@ -417,6 +418,7 @@ def main():
             str(bpe_tokenizer_path),
             args.initial_vocab_size,
             max_lines=args.max_bpe_lines,
+            char_vocab_path=args.label,
         )
 
     # Step 2: Analyze frequency
