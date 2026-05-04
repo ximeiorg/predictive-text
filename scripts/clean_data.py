@@ -80,8 +80,41 @@ def process_jsonl_file(input_path, output_path):
     print(f"  保留率: {cleaned_lines / total_lines * 100:.1f}%")
 
 
+def process_wikipedia_jsonl(input_path, output_path):
+    """处理 Wikipedia JSONL 文件（每行一个JSON对象）"""
+    total_lines = 0
+    cleaned_lines = 0
+
+    with (
+        open(input_path, "r", encoding="utf-8") as in_f,
+        open(output_path, "w", encoding="utf-8") as out_f,
+    ):
+        for line in tqdm(in_f, desc=f"清洗 {input_path.name}"):
+            total_lines += 1
+
+            try:
+                data = json.loads(line)
+                # Wikipedia格式：提取text字段
+                text = data.get("text", "")
+
+                if text:
+                    cleaned = clean_text(text)
+
+                    # 只保留足够长的文本（至少20个字符）且不只有标点
+                    if len(cleaned) >= 20 and not is_only_punctuation(cleaned):
+                        out_f.write(cleaned + "\n")
+                        cleaned_lines += 1
+
+            except json.JSONDecodeError:
+                continue
+
+    print(f"  总行数: {total_lines:,}")
+    print(f"  清洗后: {cleaned_lines:,}")
+    print(f"  保留率: {cleaned_lines / total_lines * 100:.1f}%")
+
+
 def process_json_file(input_path, output_path):
-    """处理json文件"""
+    """处理json文件（列表格式）"""
     with open(input_path, "r", encoding="utf-8") as in_f:
         data = json.load(in_f)
 
@@ -109,10 +142,18 @@ def main():
         print(f"\n处理: {file_path.name}")
         process_jsonl_file(file_path, output_path)
 
-    for file_path in rawdata_dir.glob("*.json"):
+    # 处理 Wikipedia JSONL 文件
+    for file_path in rawdata_dir.glob("wikipedia*.json"):
         output_path = cleaned_dir / f"{file_path.stem}_cleaned.txt"
         print(f"\n处理: {file_path.name}")
-        process_json_file(file_path, output_path)
+        process_wikipedia_jsonl(file_path, output_path)
+
+    # 处理其他 JSON 文件（列表格式）
+    for file_path in rawdata_dir.glob("*.json"):
+        if not file_path.name.startswith("wikipedia"):
+            output_path = cleaned_dir / f"{file_path.stem}_cleaned.txt"
+            print(f"\n处理: {file_path.name}")
+            process_json_file(file_path, output_path)
 
     # 合并所有清洗后的文件
     print("\n" + "=" * 60)
@@ -131,7 +172,7 @@ def main():
     total_lines = sum(1 for _ in open(merged_path, "r", encoding="utf-8"))
     total_chars = sum(len(line) for line in open(merged_path, "r", encoding="utf-8"))
 
-    print(f"\n✓ 清洗完成!")
+    print(f"\n[OK] 清洗完成!")
     print(f"  输出文件: {merged_path}")
     print(f"  总行数: {total_lines:,}")
     print(f"  总字符数: {total_chars:,}")

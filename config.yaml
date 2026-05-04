@@ -1,0 +1,122 @@
+# Predictive Text Model Configuration
+# 配置继承规则：base -> model_size -> command_line_args
+
+# 基础配置（所有模型共享）
+base:
+  model:
+    vocab_size: 5000
+    hidden_dim: 512
+    num_heads: 8
+    num_layers: 6
+    ffn_dim: 2048
+    max_seq_len: 128
+    dropout: 0.1
+    label_smoothing: 0.0
+    pad_token_id: 0
+    bos_token_id: 1
+    eos_token_id: 2
+    unk_token_id: 3
+
+  training:
+    batch_size: 256
+    learning_rate: 0.0003
+    num_epochs: 15
+    warmup_steps: 100
+    max_grad_norm: 1.0
+    weight_decay: 0.01
+    min_lr: 0.00001
+    eval_steps: 500
+
+  data:
+    vocab_path: "data/vocab.json"
+    train_data_path: "data/train.bin"
+    val_data_path: "data/val.bin"
+    val_ratio: 0.05
+
+# Tiny 模型 - 极致体积 (~1.5M 参数)
+tiny:
+  model:
+    vocab_size: 5000
+    hidden_dim: 128
+    num_heads: 4
+    num_layers: 2
+    ffn_dim: 256
+    max_seq_len: 64
+    dropout: 0.1
+    label_smoothing: 0.1
+
+  training:
+    batch_size: 512
+    learning_rate: 0.0006
+    num_epochs: 20
+    warmup_steps: 200
+    max_grad_norm: 0.5
+    weight_decay: 0.01
+    min_lr: 0.000001
+    eval_steps: 500
+
+# Small 模型 - 推荐配置 (~5M 参数)
+small:
+  model:
+    vocab_size: 5000
+    hidden_dim: 320
+    num_heads: 4
+    num_layers: 6
+    ffn_dim: 1024
+    max_seq_len: 128
+    dropout: 0.1
+    label_smoothing: 0.15
+
+  training:
+    batch_size: 512
+    learning_rate: 0.001
+    num_epochs: 30
+    warmup_steps: 1000
+    max_grad_norm: 1.0
+    weight_decay: 0.01
+    min_lr: 0.0000001
+    eval_steps: 1000
+
+# Medium 模型 - 高端手机 (~12M 参数)
+medium:
+  model:
+    vocab_size: 8000
+    hidden_dim: 384
+    num_heads: 6
+    num_layers: 6
+    ffn_dim: 1024
+    max_seq_len: 128
+    dropout: 0.1
+    label_smoothing: 0.05
+
+  training:
+    batch_size: 320
+    learning_rate: 0.0004
+    num_epochs: 18
+    warmup_steps: 200
+    max_grad_norm: 0.8
+    weight_decay: 0.01
+    min_lr: 0.000001
+    eval_steps: 500
+
+# Large 模型 - 追求精度 (~40M 参数)
+large:
+  model:
+    vocab_size: 8000
+    hidden_dim: 768
+    num_heads: 12
+    num_layers: 8
+    ffn_dim: 3072
+    max_seq_len: 128
+    dropout: 0.1
+    label_smoothing: 0.05
+
+  training:
+    batch_size: 192
+    learning_rate: 0.0002
+    num_epochs: 15
+    warmup_steps: 150
+    max_grad_norm: 1.0
+    weight_decay: 0.01
+    min_lr: 0.000001
+    eval_steps: 500

@@ -11,29 +11,31 @@ from tokenizers import Tokenizer
 
 from src.config import ModelConfig, list_model_sizes, MODEL_SIZES
 from src.model.transformer import create_model
+from src.data.dataset import SimpleTokenizer, load_vocab
 
 torch.serialization.add_safe_globals([ModelConfig])
 
 
 class BPETokenizer:
-    """BPE tokenizer wrapper using HuggingFace tokenizers."""
+    """兼容旧版 tokenizers 和新版 SimpleTokenizer 的包装器。"""
 
     def __init__(self, tokenizer_path: str):
-        self.tokenizer = Tokenizer.from_file(tokenizer_path)
-        self.vocab_size = self.tokenizer.get_vocab_size()
-        
-        self.pad_id = self.tokenizer.token_to_id("[PAD]")
-        self.bos_id = self.tokenizer.token_to_id("[BOS]")
-        self.eos_id = self.tokenizer.token_to_id("[EOS]")
-        self.unk_id = self.tokenizer.token_to_id("[UNK]")
+        self.tokenizer = load_vocab(tokenizer_path)
+        self.vocab_size = self.tokenizer.vocab_size if hasattr(self.tokenizer, 'vocab_size') else self.tokenizer.get_vocab_size()
+        self.unk_id = self._get_id("[UNK]")
+
+    def _get_id(self, token: str):
+        if isinstance(self.tokenizer, SimpleTokenizer):
+            return self.tokenizer.vocab.get(token, 0)
+        return self.tokenizer.token_to_id(token)
 
     def encode(self, text: str):
-        """Encode text to token ids."""
         encoding = self.tokenizer.encode(text)
         return encoding.ids
 
     def decode(self, ids: list):
-        """Decode token ids to text."""
+        if isinstance(self.tokenizer, SimpleTokenizer):
+            return "".join(self.tokenizer.id2token.get(i, "[UNK]") for i in ids)
         return self.tokenizer.decode(ids)
 
 
