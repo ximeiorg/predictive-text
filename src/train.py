@@ -355,7 +355,8 @@ def main():
         callbacks=[checkpoint_callback, early_stop_callback, custom_checkpoint_manager],
         logger=logger,
         log_every_n_steps=10,
-        val_check_interval=1.0,
+        val_check_interval=training_config.eval_steps,
+        limit_val_batches=200,
         enable_progress_bar=True,
         enable_model_summary=True,
     )

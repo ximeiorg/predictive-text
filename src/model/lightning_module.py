@@ -26,6 +26,7 @@ class DecoderTransformerLightningModule(L.LightningModule):
         self.training_config = training_config or TrainingConfig()
         self.model = DecoderTransformer(model_config)
         self.best_val_loss = float("inf")
+        self.validation_outputs = []
 
         self.save_hyperparameters({
             "model_config": vars(model_config),
@@ -67,19 +68,17 @@ class DecoderTransformerLightningModule(L.LightningModule):
 
         outputs = self.model(input_ids, labels=labels)
         loss = outputs["loss"]
-
-        self.log("val/loss", loss, prog_bar=True, on_step=False, on_epoch=True)
-
+        self.validation_outputs.append(loss)
         return {"val_loss": loss}
 
     def on_validation_epoch_end(self):
-        avg_val_loss = self.trainer.callback_metrics.get("val/loss", float("inf"))
-        if isinstance(avg_val_loss, torch.Tensor):
-            avg_val_loss = avg_val_loss.item()
-
-        if avg_val_loss < self.best_val_loss:
-            self.best_val_loss = avg_val_loss
-            self.log("val/best_loss", self.best_val_loss, prog_bar=True)
+        if not self.validation_outputs:
+            return
+        avg_loss = torch.stack(self.validation_outputs).mean()
+        self.log("val/loss", avg_loss, prog_bar=True, sync_dist=False)
+        self.best_val_loss = min(self.best_val_loss, avg_loss.item())
+        self.log("val/best_loss", self.best_val_loss, prog_bar=True, sync_dist=False)
+        self.validation_outputs.clear()
 
     def configure_optimizers(self):
         optimizer = AdamW(

@@ -21,6 +21,7 @@ class ModelConfig:
     bos_token_id: int = 1
     eos_token_id: int = 2
     unk_token_id: int = 3
+    focal_loss_gamma: float = 0.0
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ModelConfig":
@@ -197,6 +198,7 @@ class ConfigManager:
             "medium": "高端手机",
             "base": "PC/服务器",
             "large": "追求精度",
+            "xlarge": "极致精度（蒸馏 teacher）",
         }
 
         return {

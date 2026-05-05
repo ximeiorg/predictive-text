@@ -5,6 +5,21 @@ import torch.nn.functional as F
 from src.config import ModelConfig
 
 
+class FocalCrossEntropy(nn.Module):
+    def __init__(self, gamma=0.0, ignore_index=0, reduction="mean"):
+        super().__init__()
+        self.gamma = gamma
+        self.ignore_index = ignore_index
+        self.reduction = reduction
+
+    def forward(self, logits, targets):
+        ce = F.cross_entropy(logits, targets, ignore_index=self.ignore_index, reduction="none")
+        if self.gamma > 0:
+            pt = torch.exp(-ce)
+            ce = (1 - pt) ** self.gamma * ce
+        return ce.mean() if self.reduction == "mean" else ce.sum()
+
+
 class MultiHeadSelfAttention(nn.Module):
     def __init__(self, config: ModelConfig):
         super().__init__()
@@ -150,13 +165,13 @@ class DecoderTransformer(nn.Module):
 
         loss = None
         if labels is not None:
-            # Dataset already provides shifted labels (input_ids[:-1], labels[1:])
-            # So logits and labels should have the same length, use them directly
-            loss = F.cross_entropy(
+            loss_fn = FocalCrossEntropy(
+                gamma=self.config.focal_loss_gamma,
+                ignore_index=self.config.pad_token_id,
+            )
+            loss = loss_fn(
                 logits.view(-1, self.config.vocab_size),
                 labels.view(-1),
-                ignore_index=self.config.pad_token_id,
-                label_smoothing=self.config.label_smoothing,
             )
 
         return {"logits": logits, "loss": loss}

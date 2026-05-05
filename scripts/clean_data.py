@@ -39,8 +39,17 @@ def is_only_punctuation(text):
     return bool(punctuation_pattern.match(text))
 
 
-def process_jsonl_file(input_path, output_path):
-    """处理jsonl文件"""
+def write_cleaned(text: str, out_f, min_len: int = 20):
+    """清洗并写入，过滤短文本和纯标点"""
+    cleaned = clean_text(text)
+    if len(cleaned) >= min_len and not is_only_punctuation(cleaned):
+        out_f.write(cleaned + "\n")
+        return True
+    return False
+
+
+def process_standard_jsonl(input_path, output_path, content_key="content", input_key="input"):
+    """处理标准 jsonl 文件，提取 content_key / input_key 后合并"""
     total_lines = 0
     cleaned_lines = 0
 
@@ -53,24 +62,122 @@ def process_jsonl_file(input_path, output_path):
 
             try:
                 data = json.loads(line)
-                # 提取content和input字段
-                content = data.get("content", "")
-                input_text = data.get("input", "")
+                content = data.get(content_key, "")
+                input_text = data.get(input_key, "")
 
-                # 合并并清洗
                 text = (
                     f"{input_text}\n{content}"
                     if input_text and content
                     else (content or input_text)
                 )
 
-                if text:
-                    cleaned = clean_text(text)
+                if text and write_cleaned(text, out_f):
+                    cleaned_lines += 1
 
-                    # 只保留足够长的文本（至少20个字符）且不只有标点
-                    if len(cleaned) >= 20 and not is_only_punctuation(cleaned):
-                        out_f.write(cleaned + "\n")
-                        cleaned_lines += 1
+            except json.JSONDecodeError:
+                continue
+
+    print(f"  总行数: {total_lines:,}")
+    print(f"  清洗后: {cleaned_lines:,}")
+    print(f"  保留率: {cleaned_lines / total_lines * 100:.1f}%")
+
+
+def process_qa_jsonl_file(input_path, output_path):
+    """处理 QA 格式 jsonl（question + answer），复用标准流程"""
+    return process_standard_jsonl(input_path, output_path, content_key="answer", input_key="question")
+
+
+def process_chat_jsonl_file(input_path, output_path):
+    """处理 Chat 格式 jsonl（messages 字段）"""
+    total_lines = 0
+    cleaned_lines = 0
+
+    with (
+        open(input_path, "r", encoding="utf-8") as in_f,
+        open(output_path, "w", encoding="utf-8") as out_f,
+    ):
+        for line in tqdm(in_f, desc=f"清洗 {input_path.name}"):
+            total_lines += 1
+
+            try:
+                data = json.loads(line)
+                messages = data.get("messages", [])
+                texts = []
+                for msg in messages:
+                    content = msg.get("content", "")
+                    if content:
+                        texts.append(content)
+                if texts and write_cleaned("\n".join(texts), out_f):
+                    cleaned_lines += 1
+
+            except json.JSONDecodeError:
+                continue
+
+    print(f"  总行数: {total_lines:,}")
+    print(f"  清洗后: {cleaned_lines:,}")
+    print(f"  保留率: {cleaned_lines / total_lines * 100:.1f}%")
+
+
+def process_csv_file(input_path, output_path, text_column="review"):
+    """处理 CSV 文件，提取指定文本列"""
+    import csv
+
+    total_lines = 0
+    cleaned_lines = 0
+
+    with (
+        open(input_path, "r", encoding="utf-8") as in_f,
+        open(output_path, "w", encoding="utf-8") as out_f,
+    ):
+        reader = csv.DictReader(in_f)
+        for row in tqdm(reader, desc=f"清洗 {input_path.name}"):
+            total_lines += 1
+            text = row.get(text_column, "")
+            if text and write_cleaned(text, out_f):
+                cleaned_lines += 1
+
+    print(f"  总行数: {total_lines:,}")
+    print(f"  清洗后: {cleaned_lines:,}")
+    print(f"  保留率: {cleaned_lines / total_lines * 100:.1f}%")
+
+
+def process_txt_file(input_path, output_path):
+    """处理纯文本文件（每行一条样本）"""
+    total_lines = 0
+    cleaned_lines = 0
+
+    with (
+        open(input_path, "r", encoding="utf-8") as in_f,
+        open(output_path, "w", encoding="utf-8") as out_f,
+    ):
+        for line in in_f:
+            total_lines += 1
+            text = line.strip()
+            if text and write_cleaned(text, out_f):
+                cleaned_lines += 1
+
+    print(f"  总行数: {total_lines:,}")
+    print(f"  清洗后: {cleaned_lines:,}")
+    print(f"  保留率: {cleaned_lines / total_lines * 100:.1f}%")
+
+
+def process_pclue_jsonl_file(input_path, output_path):
+    """处理 pclue 格式（每行 JSON，提取 input 字段）"""
+    total_lines = 0
+    cleaned_lines = 0
+
+    with (
+        open(input_path, "r", encoding="utf-8") as in_f,
+        open(output_path, "w", encoding="utf-8") as out_f,
+    ):
+        for line in tqdm(in_f, desc=f"清洗 {input_path.name}"):
+            total_lines += 1
+
+            try:
+                data = json.loads(line)
+                text = data.get("input", "")
+                if text and write_cleaned(text, out_f):
+                    cleaned_lines += 1
 
             except json.JSONDecodeError:
                 continue
@@ -136,24 +243,44 @@ def main():
     print("开始清洗原始数据...")
     print("=" * 60)
 
-    # 处理所有文件
-    for file_path in rawdata_dir.glob("*.jsonl"):
+    # ——— JSONL files ———
+    # distill_r1_110k.jsonl          -> content + input
+    for file_path in rawdata_dir.glob("distill_r1_110k*.jsonl"):
         output_path = cleaned_dir / f"{file_path.stem}_cleaned.txt"
         print(f"\n处理: {file_path.name}")
-        process_jsonl_file(file_path, output_path)
+        process_standard_jsonl(file_path, output_path)
 
-    # 处理 Wikipedia JSONL 文件
-    for file_path in rawdata_dir.glob("wikipedia*.json"):
+    # chat_train.jsonl                -> question + answer
+    for file_path in rawdata_dir.glob("chat_*.jsonl"):
         output_path = cleaned_dir / f"{file_path.stem}_cleaned.txt"
         print(f"\n处理: {file_path.name}")
-        process_wikipedia_jsonl(file_path, output_path)
+        process_qa_jsonl_file(file_path, output_path)
 
-    # 处理其他 JSON 文件（列表格式）
-    for file_path in rawdata_dir.glob("*.json"):
-        if not file_path.name.startswith("wikipedia"):
-            output_path = cleaned_dir / f"{file_path.stem}_cleaned.txt"
-            print(f"\n处理: {file_path.name}")
-            process_json_file(file_path, output_path)
+    # qwen3*.jsonl                    -> messages (chat format)
+    for file_path in rawdata_dir.glob("qwen3*.jsonl"):
+        output_path = cleaned_dir / f"{file_path.stem}_cleaned.txt"
+        print(f"\n处理: {file_path.name}")
+        process_chat_jsonl_file(file_path, output_path)
+
+    # ——— CSV files ———
+    for file_path in rawdata_dir.glob("*.csv"):
+        output_path = cleaned_dir / f"{file_path.stem}_cleaned.txt"
+        print(f"\n处理: {file_path.name}")
+        process_csv_file(file_path, output_path)
+
+    # ——— Plain text files ———
+    for file_path in rawdata_dir.glob("*.txt"):
+        output_path = cleaned_dir / f"{file_path.stem}_cleaned.txt"
+        print(f"\n处理: {file_path.name}")
+        process_txt_file(file_path, output_path)
+
+    # ——— pclue directory (sub-datasets) ———
+    pclue_dir = rawdata_dir / "pclue"
+    if pclue_dir.exists():
+        for json_file in sorted(pclue_dir.glob("*.json")):
+            output_path = cleaned_dir / f"pclue_{json_file.stem}_cleaned.txt"
+            print(f"\n处理: pclue/{json_file.name}")
+            process_pclue_jsonl_file(json_file, output_path)
 
     # 合并所有清洗后的文件
     print("\n" + "=" * 60)

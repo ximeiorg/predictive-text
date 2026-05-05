@@ -387,7 +387,7 @@ def main():
         help="频率分析采样比例 (默认 0.3)"
     )
     parser.add_argument(
-        "--max-bpe-lines", type=int, default=500000,
+        "--max-bpe-lines", type=int, default=2000000,
         help="BPE 训练最大行数 (默认 500K, 防 OOM)"
     )
     parser.add_argument(
@@ -427,14 +427,12 @@ def main():
 
     freq = analyze_frequency(bpe_tokenizer, args.corpus, args.sample_ratio)
 
-    # Create frequency report
+    # Display frequency report
     print(f"\n  频率 Top-20 token (已解码):")
-    special_tokens = ["[PAD]", "[BOS]", "[EOS]", "[UNK]"]
     for i, (tid, cnt) in enumerate(freq.most_common(20)):
         decoded = bpe_tokenizer.decode([tid]).strip()
-        # Truncate very long decoded text for display
         display = decoded if len(decoded) <= 20 else decoded[:17] + "..."
-        flag = " [SPECIAL]" if decoded in special_tokens else ""
+        flag = " [SPECIAL]" if decoded in ["[PAD]", "[BOS]", "[EOS]", "[UNK]"] else ""
         print(f"    {i+1:2d}. ID={tid:5d} freq={cnt:>10,}  '{display}'{flag}")
 
     # Step 3: Classify and prune
@@ -453,7 +451,7 @@ def main():
         print(f"{'='*60}")
         return
 
-    # Step 5: Re-tokenize data with simple char-level encoding
+    # Step 5: Tokenize data with longest-match encoding
     print(f"\nTokenize 数据...")
     total_lines = sum(1 for _ in open(args.corpus, "r", encoding="utf-8"))
     split_at = int(total_lines * args.val_ratio)
@@ -469,7 +467,8 @@ def main():
         multi_index, max_multi_len = build_multi_index(new_vocab)
         for line in tqdm(stream_text(args.corpus), total=total_lines, desc="Tokenize"):
             ids = simple_encode(line, new_vocab, multi_index, max_multi_len)
-
+            if not ids:
+                continue
             arr = np.array(ids, dtype=np.uint16)
             if line_idx < total_lines - split_at:
                 train_f.write(arr.tobytes())
@@ -477,7 +476,6 @@ def main():
             else:
                 val_f.write(arr.tobytes())
                 val_count += len(ids)
-
             line_idx += 1
             if line_idx % 100000 == 0:
                 gc.collect()
@@ -496,7 +494,7 @@ def main():
         "train_tokens": train_count,
         "val_tokens": val_count,
         "source": args.corpus,
-        "pruning_type": f"label_filter+top_multi",
+        "tokenizer_type": "longest_match_pruned",
     }
     meta_path = output_dir / "meta.json"
     with open(meta_path, "w", encoding="utf-8") as f:
