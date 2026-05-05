@@ -86,12 +86,25 @@ def verify(onnx_path, tokenizer):
         print(f"  输出: {out.name} {out.shape}")
 
     input_name = session.get_inputs()[0].name
+    skip_ids = {tokenizer.vocab.get(k, -1) for k in ["[PAD]", "[BOS]", "[EOS]", "[UNK]"]}
+    
     for text in ["你好", "今天天气", "我觉得", "我们一起去"]:
         ids = tokenizer.encode(text).ids
+        if len(ids) > 1:
+            ids = ids[:-1]
         inp = np.array([ids], dtype=np.int64)
         logits = session.run(None, {input_name: inp})[0]
-        top5 = np.argsort(logits[0, -1, :])[-5:][::-1]
-        tokens = [tokenizer.id2token.get(int(i), "?") for i in top5]
+        
+        last_logits = logits[0, -1, :]
+        top_k = 20
+        top_indices = np.argsort(last_logits)[-top_k:][::-1]
+        
+        tokens = []
+        for i in top_indices:
+            if int(i) not in skip_ids:
+                tokens.append(tokenizer.id2token.get(int(i), "?"))
+            if len(tokens) >= 5:
+                break
         print(f"  [{text}] -> {tokens}")
     print("  [OK]")
 

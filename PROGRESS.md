@@ -14,11 +14,17 @@
 - [x] 训练脚本: src/train.py, 支持 --prepare-vocab 和 --use-prepared-data
 - [x] Decoder-Only Transformer 模型 (tiny/small/medium/base/large)
 - [x] GPU 支持 (PyTorch CUDA 13.0 + UV_NO_SYNC)
+- [x] small 模型训练完成 (10M 参数, Top-3: 48.68%)
 
 ### 推理
 - [x] 交互式推理: src/inference.py
+- [x] IME 评估脚本: scripts/evaluate_ime.py
+
+### 导出
+- [x] ONNX 导出脚本: scripts/export_onnx.py
+- [x] INT8 动态量化 (52% 压缩: 39MB → 19MB)
+- [x] 修复导出验证逻辑: 移除 EOS token 后再预测
 
 ## 下一步
-- 训练 small 模型评估 loss 收敛情况
 - 优化多字 token 的剪枝策略（目前仅保留 930 个）
-- 评估 IME 联想效果
+- 测试 mobile 端推理性能
