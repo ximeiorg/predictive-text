@@ -15,6 +15,8 @@ dependencies = [
     "rich",
     "lightning>=2.4.0",
     "pyyaml>=6.0.0",
+    "onnxscript>=0.7.0",
+    "onnxruntime>=1.25.1",
 ]
 
 [tool.uv.sources]

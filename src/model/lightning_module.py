@@ -18,10 +18,14 @@ class DecoderTransformerLightningModule(L.LightningModule):
 
     def __init__(
         self,
-        model_config: ModelConfig,
-        training_config: Optional[TrainingConfig] = None,
+        model_config: ModelConfig | dict,
+        training_config: Optional[TrainingConfig | dict] = None,
     ):
         super().__init__()
+        if isinstance(model_config, dict):
+            model_config = ModelConfig.from_dict(model_config)
+        if isinstance(training_config, dict):
+            training_config = TrainingConfig.from_dict(training_config)
         self.model_config = model_config
         self.training_config = training_config or TrainingConfig()
         self.model = DecoderTransformer(model_config)

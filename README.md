@@ -24,11 +24,27 @@ uv run python scripts/analyze_and_prune_vocab.py
 # 2. 训练模型
 uv run src/train.py --model-size small --use-prepared-data
 
-# 3. 交互式测试
-uv run src/inference_candidate.py --model-size small
+# 3. 导出 ONNX (float32 + INT8)
+uv run scripts/export_onnx.py --model-size small
+```
 
-# 4. 导出 ONNX
-uv run src/export_mobile.py --model-size small
+## 联想预测示例
+
+使用训练好的模型（small）进行联想预测：
+
+```
+  "今天天气"   -> 晴 | 怎么样 | 预 | 非常 | 如何
+  "我们一起去"  -> 看 | 找 | 看看 | 做 | 了
+  "我觉得"     -> 你 | 自己 | 这 | 我 | 这个
+  "明天早上"   -> 点 | 起来 | 好 | 时 | 要
+  "我在北京"   -> 烤 | 做 | 吃 | 市 | 的
+  "正在吃饭"   -> 。 | 的 | 时 | 的时候 | ？
+  "无论如何"   -> 选择 | 使用 | 选 | 做 | 处理
+  "你"        -> 好 | 提到 | 听 | 是一 | 怎么
+  "我"        -> 正在 | 觉得 | 不 | 刚 | 知道
+  "好"        -> 像 | ！ | 奇 | 象 | 处
+  "是"        -> 因为 | 真的 | 关于 | （ | 从
+  "不"        -> 一定 | 确定 | 行 | 必 | 锈
 ```
 
 ## 词表剪枝流程
@@ -51,15 +67,11 @@ BPE 词表（~12000）对中文会产生大量低效的字节级碎片 token。
 
 效果：模型不会倾向预测逗号/顿号，句末标点 `。！？` 仍正常学习。
 
-## 模型尺寸
+## 模型配置
 
-| 名称 | vocabsize | 参数量 | 大小 | 说明 |
-|------|-----------|--------|------|------|
-| tiny | 5000      | ~1.5M  | ~6 MB | 低端手机 |
-| small | 5000     | ~5M    | ~20 MB | 推荐手机 |
-| medium | 5000    | ~9M    | ~36 MB | 高端手机 |
-| base | 5000      | ~16M   | ~64 MB | PC/服务器 |
-| large | 5000     | ~35M   | ~140 MB | 追求精度 |
+| 名称 | vocab | dim | heads | layers | ffn | seq | 参数量 | float32 |
+|------|-------|-----|-------|--------|-----|-----|--------|---------|
+| small | 8000 | 384 | 4 | 4 | 1536 | 64 | 10.2M | 39 MB |
 
 ## 目录结构
 
@@ -68,13 +80,12 @@ BPE 词表（~12000）对中文会产生大量低效的字节级碎片 token。
 │   ├── train.py          # 训练脚本
 │   ├── inference.py      # 推理脚本
 │   ├── inference_candidate.py  # 联想词推理
-│   ├── export_mobile.py  # ONNX 导出
 │   ├── config.py         # 配置定义
 │   └── model/            # 模型实现
 ├── scripts/
 │   ├── analyze_and_prune_vocab.py  # 词表分析+剪枝 (核心)
 │   ├── prepare_from_cleaned.py     # 数据准备 (备选)
-│   ├── export_onnx_quantized.py    # ONNX 导出与量化
+│   ├── export_onnx.py              # ONNX 导出 (float32 + INT8 量化)
 │   ├── test_onnx_inference.py      # ONNX 测试
 │   └── verify_model.py             # 模型验证
 ├── data/                 # 数据目录 (vocab.json / train.bin / val.bin)

@@ -43,7 +43,7 @@ tiny:
     ffn_dim: 256
     max_seq_len: 64
     dropout: 0.1
-    label_smoothing: 0.1
+    label_smoothing: 0.0
 
   training:
     batch_size: 512
@@ -63,7 +63,7 @@ small:
     num_heads: 4
     num_layers: 4
     ffn_dim: 1536
-    max_seq_len: 32
+    max_seq_len: 64
     dropout: 0.1
     label_smoothing: 0.0
     focal_loss_gamma: 2.0
@@ -71,7 +71,7 @@ small:
   training:
     batch_size: 1024
     learning_rate: 0.001
-    num_epochs: 10
+    num_epochs: 20
     warmup_steps: 1000
     max_grad_norm: 1.0
     weight_decay: 0.01
