@@ -172,14 +172,14 @@ def main():
 
     test_cases = [
         "今天天气", "我们一起去", "我觉得", "明天早上",
-        "我在北京", "正在吃饭", "无论如何", "你",
-        "我", "好", "是", "不",
+        "我在上海的", "正在吃饭", "无论如何", "你",
+        "我真的是受", "好", "是我", "不想出",
     ]
-    predictions = sample_predictions(model, tokenizer, device, test_cases, top_k=5)
+    predictions = sample_predictions(model, tokenizer, device, test_cases, top_k=10)
 
     print("\n联想预测示例:")
     for p in predictions:
-        print(f"  \"{p['input']}\" -> {' | '.join(p['candidates'][:5])}")
+        print(f"  \"{p['input']}\" -> {' | '.join(p['candidates'])}")
 
     out_path = Path(f"output/{args.model_size}/ime_eval.json")
     with open(out_path, "w", encoding="utf-8") as f:

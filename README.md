@@ -58,7 +58,7 @@ BPE 词表（~12000）对中文会产生大量低效的字节级碎片 token。
    - 单字在 `label.txt` 中 → 保留
    - 单字不在 `label.txt` 中 → 丢弃（覆盖率 < 0.2%）
    - 多字组合 → 按频率排序保留 top-N
-4. 输出 `data/vocab.json`（~5000 词表）+ `data/train.bin` + `data/val.bin`
+4. 输出 `data/vocab.json`（~8000 词表）+ `data/train.bin` + `data/val.bin`
 
 ## 标点 loss 掩码
 
