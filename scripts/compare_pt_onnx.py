@@ -17,7 +17,7 @@ for tag, path in [("float32 (PyTorch)", None), ("int8 (ONNX)", "mobile/small/mod
         inp_name = sess.get_inputs()[0].name
 
     print(f"\n=== {tag} ===")
-    for prefix in ["你好", "今天天气", "我觉得", "我们一起去", "我在北京"]:
+    for prefix in ["你好", "今天天气", "永远也看不", "我们一起去", "我在北京","梅花香自"]:
         ids = [vocab.get("[BOS]", 1)]
         for ch in prefix:
             ids.append(vocab.get(ch, vocab.get("[UNK]", 3)))

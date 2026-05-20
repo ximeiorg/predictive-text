@@ -28,6 +28,12 @@ uv run src/train.py --model-size small --use-prepared-data
 uv run scripts/export_onnx.py --model-size small
 ```
 
+## 对齐模型
+对齐脚本
+```shell
+ uv run python scripts/compare_pt_onnx.py
+```
+
 ## 联想预测示例
 
 使用训练好的模型（small）进行联想预测：
