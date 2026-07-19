@@ -160,6 +160,12 @@ def main():
         help="Training precision (default: 32)",
     )
     parser.add_argument(
+        "--resume",
+        type=str,
+        default=None,
+        help="Resume from checkpoint path (e.g. output/base/checkpoints/last.ckpt)",
+    )
+    parser.add_argument(
         "--prepare-vocab",
         action="store_true",
         help="先运行 analyze_and_prune_vocab.py 生成词表和数据，再训练",
@@ -356,12 +362,16 @@ def main():
     print(f"\nTensorBoard logs: {logger.log_dir}")
     print(f"Run: tensorboard --logdir {output_dir / 'logs'}")
 
-    # Train
+    # Train (resume from checkpoint if specified)
+    ckpt_path = args.resume if args.resume else None
+    if ckpt_path:
+        print(f"Resuming from checkpoint: {ckpt_path}")
     print("\nStarting training...")
     trainer.fit(
         model=lightning_module,
         train_dataloaders=train_loader,
         val_dataloaders=val_loader,
+        ckpt_path=ckpt_path,
     )
 
     # Save final model
