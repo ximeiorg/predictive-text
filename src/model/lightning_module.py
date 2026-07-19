@@ -43,8 +43,9 @@ class DecoderTransformerLightningModule(L.LightningModule):
     def training_step(self, batch, batch_idx):
         input_ids = batch["input_ids"]
         labels = batch["labels"]
+        loss_weight = batch.get("loss_weight")
 
-        outputs = self.model(input_ids, labels=labels)
+        outputs = self.model(input_ids, labels=labels, loss_weight=loss_weight)
         loss = outputs["loss"]
 
         self.log("train/loss", loss, prog_bar=True, on_step=True, on_epoch=True)
@@ -69,8 +70,9 @@ class DecoderTransformerLightningModule(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         input_ids = batch["input_ids"]
         labels = batch["labels"]
+        loss_weight = batch.get("loss_weight")
 
-        outputs = self.model(input_ids, labels=labels)
+        outputs = self.model(input_ids, labels=labels, loss_weight=loss_weight)
         loss = outputs["loss"]
         self.validation_outputs.append(loss)
         return {"val_loss": loss}

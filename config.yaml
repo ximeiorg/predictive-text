@@ -4,7 +4,7 @@
 # 基础配置（所有模型共享）
 base:
   model:
-    vocab_size: 5000
+    vocab_size: 8000
     hidden_dim: 512
     num_heads: 8
     num_layers: 6
@@ -33,29 +33,7 @@ base:
     val_data_path: "data/val.bin"
     val_ratio: 0.05
 
-# Tiny 模型 - 极致体积 (~1.5M 参数)
-tiny:
-  model:
-    vocab_size: 5000
-    hidden_dim: 128
-    num_heads: 4
-    num_layers: 2
-    ffn_dim: 256
-    max_seq_len: 64
-    dropout: 0.1
-    label_smoothing: 0.0
-
-  training:
-    batch_size: 512
-    learning_rate: 0.0006
-    num_epochs: 20
-    warmup_steps: 200
-    max_grad_norm: 0.5
-    weight_decay: 0.01
-    min_lr: 0.000001
-    eval_steps: 500
-
-# Small 模型 - 推荐配置 (~5M 参数)
+# Small 模型 - 推荐手机配置 (10.2M 参数)
 small:
   model:
     vocab_size: 8000
@@ -78,29 +56,7 @@ small:
     min_lr: 0.0000001
     eval_steps: 1000
 
-# Medium 模型 - 高端手机 (~12M 参数)
-medium:
-  model:
-    vocab_size: 8000
-    hidden_dim: 384
-    num_heads: 6
-    num_layers: 6
-    ffn_dim: 1024
-    max_seq_len: 128
-    dropout: 0.1
-    label_smoothing: 0.05
-
-  training:
-    batch_size: 320
-    learning_rate: 0.0004
-    num_epochs: 18
-    warmup_steps: 200
-    max_grad_norm: 0.8
-    weight_decay: 0.01
-    min_lr: 0.000001
-    eval_steps: 500
-
-# Large 模型 - 追求精度 (~40M 参数)
+# Large 模型 - 追求精度 (62.9M 参数)
 large:
   model:
     vocab_size: 8000

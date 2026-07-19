@@ -13,13 +13,15 @@ class FocalCrossEntropy(nn.Module):
         self.reduction = reduction
         self.label_smoothing = label_smoothing
 
-    def forward(self, logits, targets):
+    def forward(self, logits, targets, weight=None):
         ce = F.cross_entropy(
             logits, targets,
             ignore_index=self.ignore_index,
             reduction="none",
             label_smoothing=self.label_smoothing,
         )
+        if weight is not None:
+            ce = ce * weight
         if self.gamma > 0:
             pt = torch.exp(-ce)
             ce = (1 - pt) ** self.gamma * ce
@@ -145,7 +147,7 @@ class DecoderTransformer(nn.Module):
             torch.nn.init.zeros_(module.bias)
             torch.nn.init.ones_(module.weight)
 
-    def forward(self, input_ids, labels=None):
+    def forward(self, input_ids, labels=None, loss_weight=None):
         batch_size, seq_len = input_ids.shape
 
         positions = (
@@ -176,9 +178,11 @@ class DecoderTransformer(nn.Module):
                 ignore_index=self.config.pad_token_id,
                 label_smoothing=self.config.label_smoothing,
             )
+            flat_weight = loss_weight.view(-1) if loss_weight is not None else None
             loss = loss_fn(
                 logits.view(-1, self.config.vocab_size),
                 labels.view(-1),
+                weight=flat_weight,
             )
 
         return {"logits": logits, "loss": loss}

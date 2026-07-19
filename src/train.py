@@ -1,7 +1,7 @@
 """Training script for the Decoder-Only Transformer using PyTorch Lightning."""
 
 import lightning as L
-from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
+from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import TensorBoardLogger
 import torch
 import argparse
@@ -29,11 +29,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 模型尺寸配置 (从 config.yaml 加载):
-  tiny   - ~2M 参数, 8 MB  (极致体积，低端手机)
-  small  - ~6M 参数, 24 MB (推荐手机)
-  medium - ~12M 参数, 48 MB (高端手机)
-  base   - ~20M 参数, 80 MB (默认，PC/服务器)
-  large  - ~40M 参数, 160 MB (追求精度)
+  small  - 10.2M 参数, 39 MB (推荐手机)
+  base   - 23.0M 参数, 88 MB (默认，PC/服务器)
+  large  - 62.9M 参数, 240 MB (追求精度)
 
 配置文件: config.yaml
 
@@ -51,7 +49,7 @@ def main():
   uv run src/train.py --model-size small --use-prepared-data --eval-after-train
 
   # 查看所有可用配置
-  python -c "from src.config import list_model_sizes; list_model_sizes()"
+  uv run python -c "from src.config import list_model_sizes; list_model_sizes()"
         """,
     )
 
@@ -65,7 +63,7 @@ def main():
         "--model-size",
         type=str,
         default="base",
-        help="Model size configuration: tiny, small, medium, base, large (default: base)",
+        help="Model size configuration: small, base, large (default: base)",
     )
     parser.add_argument(
         "--data-path",
@@ -316,14 +314,6 @@ def main():
         verbose=True,
     )
 
-    early_stop_callback = EarlyStopping(
-        monitor="val/loss",
-        min_delta=0.001,
-        patience=5,
-        verbose=True,
-        mode="min",
-    )
-
     custom_checkpoint_manager = ModelCheckpointManager(
         output_dir=output_dir,
         save_top_k=3,
@@ -352,7 +342,7 @@ def main():
         precision=precision,
         accumulate_grad_batches=args.accumulate_grad_batches,
         gradient_clip_val=training_config.max_grad_norm,
-        callbacks=[checkpoint_callback, early_stop_callback, custom_checkpoint_manager],
+        callbacks=[checkpoint_callback, custom_checkpoint_manager],
         logger=logger,
         log_every_n_steps=10,
         val_check_interval=training_config.eval_steps,

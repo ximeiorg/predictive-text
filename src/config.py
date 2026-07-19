@@ -193,12 +193,9 @@ class ConfigManager:
         size_mb = model_config.get_size_mb()
 
         descriptions = {
-            "tiny": "极致体积，低端手机",
             "small": "推荐手机配置",
-            "medium": "高端手机",
             "base": "PC/服务器",
             "large": "追求精度",
-            "xlarge": "极致精度（蒸馏 teacher）",
         }
 
         return {
@@ -260,9 +257,7 @@ def list_model_sizes():
 
 # 兼容旧代码的 MODEL_SIZES 字典
 MODEL_SIZES = {
-    "tiny": {"config": lambda: get_model_config("tiny")},
     "small": {"config": lambda: get_model_config("small")},
-    "medium": {"config": lambda: get_model_config("medium")},
     "base": {"config": lambda: get_model_config("base")},
     "large": {"config": lambda: get_model_config("large")},
 }
