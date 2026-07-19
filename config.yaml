@@ -19,9 +19,9 @@ base:
 
   training:
     batch_size: 256
-    learning_rate: 0.0003
+    learning_rate: 0.001
     num_epochs: 15
-    warmup_steps: 100
+    warmup_steps: 500
     max_grad_norm: 1.0
     weight_decay: 0.01
     min_lr: 0.00001

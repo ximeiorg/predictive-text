@@ -149,8 +149,8 @@ def main():
     parser.add_argument(
         "--num-workers",
         type=int,
-        default=0,
-        help="Number of dataloader workers",
+        default=4,
+        help="Number of dataloader workers (default: 4)",
     )
     parser.add_argument(
         "--precision",
@@ -295,12 +295,14 @@ def main():
         shuffle=True,
         num_workers=args.num_workers,
         drop_last=True,
+        pin_memory=True,
     )
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size=training_config.batch_size,
         shuffle=False,
         num_workers=args.num_workers,
+        pin_memory=True,
     )
 
     # Setup callbacks
