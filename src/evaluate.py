@@ -213,10 +213,20 @@ def load_model(checkpoint_path, device="auto"):
         device = torch.device(device)
 
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    config = checkpoint.get("config", ModelConfig())
+
+    # 兼容 Lightning checkpoint 和自定义 checkpoint 格式
+    if "model_state_dict" in checkpoint:
+        state_dict = checkpoint["model_state_dict"]
+        config = checkpoint.get("config", ModelConfig())
+    elif "state_dict" in checkpoint:
+        state_dict = {k.removeprefix("model."): v for k, v in checkpoint["state_dict"].items()}
+        hp = checkpoint.get("hyper_parameters", {})
+        config = ModelConfig.from_dict(hp.get("model_config", {}))
+    else:
+        raise KeyError("Unrecognized checkpoint format: no 'model_state_dict' or 'state_dict' found")
 
     model = create_model(config)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    model.load_state_dict(state_dict, strict=False)
     model = model.to(device)
     model.eval()
 

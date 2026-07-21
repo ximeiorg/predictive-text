@@ -28,6 +28,40 @@ class FocalCrossEntropy(nn.Module):
         return ce.mean() if self.reduction == "mean" else ce.sum()
 
 
+class RotaryEmbedding(nn.Module):
+    def __init__(self, dim: int, max_seq_len: int = 128, base: float = 10000.0):
+        super().__init__()
+        inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
+        self.register_buffer("inv_freq", inv_freq, persistent=False)
+        self.build_cache(max_seq_len, dim)
+
+    def build_cache(self, max_seq_len: int, dim: int):
+        pos = torch.arange(max_seq_len, dtype=torch.float32)
+        freqs = torch.einsum("i,j->ij", pos, self.inv_freq)
+        # duplicate to full dim: [seq_len, dim//2] -> [seq_len, dim]
+        freqs = torch.cat([freqs, freqs], dim=-1)
+        self.register_buffer("cos_cache", freqs.cos()[None, None, :, :], persistent=False)
+        self.register_buffer("sin_cache", freqs.sin()[None, None, :, :], persistent=False)
+
+    def forward(self, x: torch.Tensor, seq_len: int, offset: int = 0):
+        if seq_len > self.cos_cache.shape[2]:
+            self.build_cache(seq_len, self.cos_cache.shape[-1])
+        cos = self.cos_cache[:, :, offset:offset + seq_len, :]
+        sin = self.sin_cache[:, :, offset:offset + seq_len, :]
+        return cos, sin
+
+
+def rotate_half(x: torch.Tensor) -> torch.Tensor:
+    x1, x2 = x.chunk(2, dim=-1)
+    return torch.cat([-x2, x1], dim=-1)
+
+
+def apply_rotary(q: torch.Tensor, k: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor):
+    q = q * cos + rotate_half(q) * sin
+    k = k * cos + rotate_half(k) * sin
+    return q, k
+
+
 class MultiHeadSelfAttention(nn.Module):
     def __init__(self, config: ModelConfig):
         super().__init__()
@@ -44,6 +78,7 @@ class MultiHeadSelfAttention(nn.Module):
         self.v_proj = nn.Linear(config.hidden_dim, config.hidden_dim, bias=False)
         self.o_proj = nn.Linear(config.hidden_dim, config.hidden_dim, bias=False)
 
+        self.rotary = RotaryEmbedding(self.head_dim, config.max_seq_len)
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, x, mask=None):
@@ -64,6 +99,9 @@ class MultiHeadSelfAttention(nn.Module):
             .view(batch_size, seq_len, self.num_heads, self.head_dim)
             .transpose(1, 2)
         )
+
+        cos, sin = self.rotary(q, seq_len)
+        q, k = apply_rotary(q, k, cos, sin)
 
         scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)
 
@@ -86,8 +124,8 @@ class MultiHeadSelfAttention(nn.Module):
 class FeedForward(nn.Module):
     def __init__(self, config: ModelConfig):
         super().__init__()
-        self.fc1 = nn.Linear(config.hidden_dim, config.ffn_dim)
-        self.fc2 = nn.Linear(config.ffn_dim, config.hidden_dim)
+        self.fc1 = nn.Linear(config.hidden_dim, config.ffn_dim, bias=False)
+        self.fc2 = nn.Linear(config.ffn_dim, config.hidden_dim, bias=False)
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, x):
@@ -122,7 +160,9 @@ class DecoderTransformer(nn.Module):
         self.config = config
 
         self.token_embedding = nn.Embedding(config.vocab_size, config.hidden_dim)
-        self.position_embedding = nn.Embedding(config.max_seq_len, config.hidden_dim)
+
+        if not config.use_rope:
+            self.position_embedding = nn.Embedding(config.max_seq_len, config.hidden_dim)
 
         self.blocks = nn.ModuleList(
             [TransformerBlock(config) for _ in range(config.num_layers)]
@@ -150,13 +190,10 @@ class DecoderTransformer(nn.Module):
     def forward(self, input_ids, labels=None, loss_weight=None):
         batch_size, seq_len = input_ids.shape
 
-        positions = (
-            torch.arange(seq_len, device=input_ids.device)
-            .unsqueeze(0)
-            .expand(batch_size, -1)
-        )
-
-        x = self.token_embedding(input_ids) + self.position_embedding(positions)
+        x = self.token_embedding(input_ids)
+        if not self.config.use_rope:
+            positions = torch.arange(seq_len, device=input_ids.device).unsqueeze(0).expand(batch_size, -1)
+            x = x + self.position_embedding(positions)
         x = self.dropout(x)
 
         causal_mask = (

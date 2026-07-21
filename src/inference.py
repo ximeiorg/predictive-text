@@ -22,6 +22,7 @@ class BPETokenizer:
     def __init__(self, tokenizer_path: str):
         self.tokenizer = load_vocab(tokenizer_path)
         self.vocab_size = self.tokenizer.vocab_size if hasattr(self.tokenizer, 'vocab_size') else self.tokenizer.get_vocab_size()
+        self.eos_id = 2  # [EOS]=2 在所有模型中统一
         self.unk_id = self._get_id("[UNK]")
 
     def _get_id(self, token: str):
@@ -50,10 +51,20 @@ def load_model(checkpoint_path: str, device: str = "auto"):
     device = torch.device(device)
 
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    config = checkpoint.get("config", ModelConfig())
+
+    # 兼容 Lightning checkpoint 和自定义 checkpoint 格式
+    if "model_state_dict" in checkpoint:
+        state_dict = checkpoint["model_state_dict"]
+        config = checkpoint.get("config", ModelConfig())
+    elif "state_dict" in checkpoint:
+        state_dict = {k.removeprefix("model."): v for k, v in checkpoint["state_dict"].items()}
+        hp = checkpoint.get("hyper_parameters", {})
+        config = ModelConfig.from_dict(hp.get("model_config", {}))
+    else:
+        raise KeyError("Unrecognized checkpoint format: no 'model_state_dict' or 'state_dict' found")
 
     model = create_model(config)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    model.load_state_dict(state_dict, strict=False)
     model = model.to(device)
     model.eval()
 
@@ -74,6 +85,10 @@ def predict_next_tokens(
     
     if len(tokens) == 0:
         return []
+    
+    # SimpleTokenizer 会在末尾加 [EOS]，推理时要去掉
+    if tokens[-1] == getattr(tokenizer, 'eos_id', 2):
+        tokens = tokens[:-1]
     
     input_ids = torch.tensor([tokens], dtype=torch.long, device=device)
     

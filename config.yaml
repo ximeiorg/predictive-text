@@ -16,6 +16,7 @@ base:
     bos_token_id: 1
     eos_token_id: 2
     unk_token_id: 3
+    use_rope: true
 
   training:
     batch_size: 256

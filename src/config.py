@@ -22,6 +22,7 @@ class ModelConfig:
     eos_token_id: int = 2
     unk_token_id: int = 3
     focal_loss_gamma: float = 0.0
+    use_rope: bool = False
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ModelConfig":

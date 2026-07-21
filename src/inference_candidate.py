@@ -6,30 +6,28 @@ import torch.nn.functional as F
 import json
 from pathlib import Path
 import argparse
-from tokenizers import Tokenizer
 from src.config import ModelConfig
 from src.model.transformer import create_model
+from src.data.dataset import load_vocab
 
 
-class BPETokenizer:
-    """BPE tokenizer wrapper using HuggingFace tokenizers."""
+class InferenceTokenizer:
+    """推理用 tokenizer，兼容 SimpleTokenizer 和 HuggingFace 两种格式。"""
 
     def __init__(self, tokenizer_path: str):
-        self.tokenizer = Tokenizer.from_file(tokenizer_path)
-        self.vocab_size = self.tokenizer.get_vocab_size()
-        
-        self.pad_id = self.tokenizer.token_to_id("[PAD]")
-        self.bos_id = self.tokenizer.token_to_id("[BOS]")
-        self.eos_id = self.tokenizer.token_to_id("[EOS]")
-        self.unk_id = self.tokenizer.token_to_id("[UNK]")
+        self.tokenizer = load_vocab(tokenizer_path)
+        self.vocab_size = self.tokenizer.vocab_size if hasattr(self.tokenizer, 'vocab_size') else self.tokenizer.get_vocab_size()
+        self.eos_id = 2
 
     def encode(self, text: str):
-        """Encode text to token ids."""
-        encoding = self.tokenizer.encode(text)
-        return encoding.ids
+        raw = self.tokenizer.encode(text)
+        ids = raw.ids if hasattr(raw, 'ids') else raw
+        # SimpleTokenizer 会在末尾加 [EOS]，推理时去掉
+        if ids and ids[-1] == self.eos_id:
+            ids = ids[:-1]
+        return ids
 
     def decode(self, ids: list):
-        """Decode token ids to text."""
         return self.tokenizer.decode(ids)
 
 
@@ -45,10 +43,20 @@ def load_model(checkpoint_path: str, device: str = "auto"):
     device = torch.device(device)
 
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    config = checkpoint.get("config", ModelConfig())
+
+    # 兼容 Lightning checkpoint 和自定义 checkpoint 格式
+    if "model_state_dict" in checkpoint:
+        state_dict = checkpoint["model_state_dict"]
+        config = checkpoint.get("config", ModelConfig())
+    elif "state_dict" in checkpoint:
+        state_dict = {k.removeprefix("model."): v for k, v in checkpoint["state_dict"].items()}
+        hp = checkpoint.get("hyper_parameters", {})
+        config = ModelConfig.from_dict(hp.get("model_config", {}))
+    else:
+        raise KeyError("Unrecognized checkpoint format: no 'model_state_dict' or 'state_dict' found")
 
     model = create_model(config)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    model.load_state_dict(state_dict, strict=False)
     model = model.to(device)
     model.eval()
 
@@ -285,7 +293,7 @@ def interactive_mode(model, tokenizer, device):
             print("\n\n  👋 感谢使用，再见！")
             break
         except Exception as e:
-            print(f"\n  ❌ 错误: {e}")
+            print(f"\n  [错误]: {e}")
             print("  请重试或输入 'help' 查看帮助")
 
 
@@ -298,13 +306,23 @@ def main():
         help="模型checkpoint路径",
     )
     parser.add_argument(
-        "--tokenizer", type=str, default="data/tokenizer.json", help="Tokenizer文件"
+        "--model-size",
+        type=str,
+        default="base",
+        help="Model size for default checkpoint path: small, base, large",
+    )
+    parser.add_argument(
+        "--tokenizer", type=str, default="data/vocab.json", help="Tokenizer文件 (vocab.json 或 HuggingFace格式)"
     )
     parser.add_argument(
         "--device", type=str, default="auto", help="设备 (auto/cpu/cuda/mps)"
     )
 
     args = parser.parse_args()
+
+    # Default checkpoint path based on model size
+    if args.checkpoint == "output/best_model.pt" and args.model_size:
+        args.checkpoint = f"output/{args.model_size}/logs/lightning_logs/version_0/best_model.pt"
 
     if not Path(args.checkpoint).exists():
         print(f"❌ 模型文件不存在: {args.checkpoint}")

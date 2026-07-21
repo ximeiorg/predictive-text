@@ -19,7 +19,7 @@ from src.config import (
     TrainingConfig,
     DataConfig,
 )
-from src.model.lightning_module import DecoderTransformerLightningModule, ModelCheckpointManager
+from src.model.lightning_module import DecoderTransformerLightningModule
 from src.data.dataset import WikipediaDataset, DataLoader, load_vocab
 
 
@@ -311,27 +311,21 @@ def main():
         pin_memory=True,
     )
 
+    # Setup logger (Lightning auto-versions as version_0, version_1, ...)
+    logger = TensorBoardLogger(
+        save_dir=output_dir,
+        name="logs",
+    )
+
     # Setup callbacks
     checkpoint_callback = ModelCheckpoint(
-        dirpath=output_dir / "checkpoints",
+        dirpath=Path(logger.log_dir) / "checkpoints",
         filename="{epoch:02d}-{val/loss:.4f}",
         monitor="val/loss",
         mode="min",
         save_top_k=3,
         save_last=True,
         verbose=True,
-    )
-
-    custom_checkpoint_manager = ModelCheckpointManager(
-        output_dir=output_dir,
-        save_top_k=3,
-        monitor="val/loss",
-    )
-
-    # Setup logger
-    logger = TensorBoardLogger(
-        save_dir=output_dir / "logs",
-        name="lightning_logs",
     )
 
     # Determine precision
@@ -350,7 +344,7 @@ def main():
         precision=precision,
         accumulate_grad_batches=args.accumulate_grad_batches,
         gradient_clip_val=training_config.max_grad_norm,
-        callbacks=[checkpoint_callback, custom_checkpoint_manager],
+        callbacks=[checkpoint_callback],
         logger=logger,
         log_every_n_steps=10,
         val_check_interval=training_config.eval_steps,
@@ -374,15 +368,16 @@ def main():
         ckpt_path=ckpt_path,
     )
 
-    # Save final model
-    final_path = output_dir / "final_model.pt"
-    lightning_module.save_checkpoint(output_dir, prefix="final")
+    # Save final model (inside versioned directory)
+    save_dir = logger.log_dir
+    final_path = save_dir / "final_model.pt"
+    lightning_module.save_checkpoint(save_dir, prefix="final")
     print(f"Final model saved to: {final_path}")
 
     # Copy best model
     best_checkpoint = checkpoint_callback.best_model_path
     if best_checkpoint and Path(best_checkpoint).exists():
-        best_path = output_dir / "best_model.pt"
+        best_path = save_dir / "best_model.pt"
         shutil.copy(best_checkpoint, best_path)
         print(f"Best model copied to: {best_path}")
 
@@ -417,13 +412,13 @@ def main():
     print("\n" + "=" * 60)
     print("训练完成!")
     print("=" * 60)
-    print(f"模型保存在: {output_dir}")
-    print(f"最佳模型: {output_dir / 'best_model.pt'}")
+    print(f"模型保存在: {save_dir}")
+    print(f"最佳模型: {save_dir / 'best_model.pt'}")
     print(f"\n下一步:")
     print(f"  评估模型: uv run src/evaluate.py --model-size {args.model_size}")
     print(f"  推理测试: uv run src/inference.py --model-size {args.model_size} --interactive")
     print(f"  导出MNN:  uv run src/export_mobile.py --model-size {args.model_size}")
-    print(f"  TensorBoard: tensorboard --logdir {output_dir / 'logs'}")
+    print(f"  TensorBoard: tensorboard --logdir {save_dir}")
     print("=" * 60)
 
 
