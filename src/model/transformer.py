@@ -215,6 +215,17 @@ class DecoderTransformer(nn.Module):
                 ignore_index=self.config.pad_token_id,
                 label_smoothing=self.config.label_smoothing,
             )
+
+            # 尾部加权：提高最后几个 token 的 loss 权重，聚焦联想区
+            if self.config.tail_loss_weight > 1.0:
+                tail_weight = torch.ones(batch_size, seq_len, device=input_ids.device, dtype=torch.float)
+                tail_start = max(0, seq_len - self.config.tail_loss_len)
+                tail_weight[:, tail_start:] = self.config.tail_loss_weight
+                if loss_weight is not None:
+                    loss_weight = loss_weight * tail_weight
+                else:
+                    loss_weight = tail_weight
+
             flat_weight = loss_weight.view(-1) if loss_weight is not None else None
             loss = loss_fn(
                 logits.view(-1, self.config.vocab_size),

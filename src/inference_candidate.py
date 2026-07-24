@@ -322,7 +322,9 @@ def main():
 
     # Default checkpoint path based on model size
     if args.checkpoint == "output/best_model.pt" and args.model_size:
-        args.checkpoint = f"output/{args.model_size}/logs/lightning_logs/version_0/best_model.pt"
+        versioned = Path(f"output/{args.model_size}/logs/lightning_logs/version_0/best_model.pt")
+        legacy = Path(f"output/{args.model_size}/best_model.pt")
+        args.checkpoint = str(versioned if versioned.exists() else legacy)
 
     if not Path(args.checkpoint).exists():
         print(f"❌ 模型文件不存在: {args.checkpoint}")
@@ -338,7 +340,7 @@ def main():
     print(f"✓ 设备: {device}")
 
     print(f"📦 加载 tokenizer...")
-    tokenizer = BPETokenizer(args.tokenizer)
+    tokenizer = InferenceTokenizer(args.tokenizer)
     print(f"✓ 词汇表大小: {tokenizer.vocab_size}")
 
     interactive_mode(model, tokenizer, device)

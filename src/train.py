@@ -149,15 +149,15 @@ def main():
     parser.add_argument(
         "--num-workers",
         type=int,
-        default=4,
-        help="Number of dataloader workers (default: 4)",
+        default=0,
+        help="Number of dataloader workers (Windows 推荐 0, Linux 可设 4-8)",
     )
     parser.add_argument(
         "--precision",
         type=str,
-        default="32",
+        default="16",
         choices=["16", "32", "bf16"],
-        help="Training precision (default: 32)",
+        help="Training precision (default: 16, RTX 30/40 系列支持)",
     )
     parser.add_argument(
         "--resume",
@@ -235,6 +235,9 @@ def main():
     print(f"Val Ratio:    {data_config.val_ratio}")
     print(f"Vocab Size:   {model_config.vocab_size}")
     print("=" * 60 + "\n")
+
+    # Enable Tensor Cores for RTX 30/40 series
+    torch.set_float32_matmul_precision("medium")
 
     output_dir = Path(args.output_dir) / args.model_size
     output_dir.mkdir(parents=True, exist_ok=True)

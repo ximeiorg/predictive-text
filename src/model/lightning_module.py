@@ -74,6 +74,28 @@ class DecoderTransformerLightningModule(L.LightningModule):
 
         outputs = self.model(input_ids, labels=labels, loss_weight=loss_weight)
         loss = outputs["loss"]
+        logits = outputs["logits"]
+
+        # 计算 Top-K 准确率（排除 pad 位置）
+        pad_id = self.model_config.pad_token_id
+        mask = labels != pad_id
+        if mask.any():
+            logits_flat = logits.view(-1, self.model_config.vocab_size)
+            labels_flat = labels.view(-1)
+            mask_flat = mask.view(-1)
+
+            top1 = logits_flat.argmax(dim=-1)
+            top5 = torch.topk(logits_flat, 5, dim=-1).indices
+
+            correct1 = (top1 == labels_flat) & mask_flat
+            correct5 = (top5 == labels_flat.unsqueeze(-1)).any(dim=-1) & mask_flat
+
+            acc1 = correct1.sum() / mask_flat.sum()
+            acc5 = correct5.sum() / mask_flat.sum()
+
+            self.log("val/acc_top1", acc1, prog_bar=True, on_step=False, on_epoch=True)
+            self.log("val/acc_top5", acc5, prog_bar=True, on_step=False, on_epoch=True)
+
         self.validation_outputs.append(loss)
         return {"val_loss": loss}
 

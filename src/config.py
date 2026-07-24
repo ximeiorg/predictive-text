@@ -23,6 +23,8 @@ class ModelConfig:
     unk_token_id: int = 3
     focal_loss_gamma: float = 0.0
     use_rope: bool = False
+    tail_loss_weight: float = 1.0  # >1.0 增强最后几个 token 的 loss 权重
+    tail_loss_len: int = 8          # 尾部分区长度
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ModelConfig":
