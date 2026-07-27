@@ -4,6 +4,13 @@
 
 > 这是为 [https://github.com/ximeiorg/Xime](https://github.com/ximeiorg/Xime) 项目准备的联想词预测模型。
 
+## 预训练模型
+
+| 模型 | 大小 | 下载 |
+|------|------|------|
+| **base** | 23M 参数 | [ModelScope](https://www.modelscope.cn/models/bikeand/predictive-text-base) |
+| **small** | 10M 参数 | [ModelScope](https://www.modelscope.cn/models/bikeand/predictive-text-small) |
+
 ## 功能特性
 
 - 支持多种模型尺寸（small/base/large）
