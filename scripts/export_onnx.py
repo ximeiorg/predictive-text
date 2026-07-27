@@ -11,7 +11,6 @@ import torch.onnx
 import numpy as np
 
 from src.config import MODEL_SIZES
-from src.model.lightning_module import DecoderTransformerLightningModule
 from src.data.dataset import SimpleTokenizer
 
 try:
@@ -28,13 +27,28 @@ def load_vocab(path):
     return SimpleTokenizer(vocab)
 
 
-def export_onnx_float32(checkpoint_path, output_path, max_seq_len=64):
-    pl_module = DecoderTransformerLightningModule.load_from_checkpoint(
-        checkpoint_path, map_location="cpu"
-    )
-    model = pl_module.model
-    config = pl_module.model_config
+def load_model(checkpoint_path):
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    if "model_state_dict" in checkpoint:
+        state_dict = checkpoint["model_state_dict"]
+        config = checkpoint.get("config", {})
+    elif "state_dict" in checkpoint:
+        state_dict = {k.removeprefix("model."): v for k, v in checkpoint["state_dict"].items()}
+        hp = checkpoint.get("hyper_parameters", {})
+        config = hp.get("model_config", {})
+    else:
+        raise KeyError("Unknown checkpoint format")
+
+    from src.config import ModelConfig
+    from src.model.transformer import DecoderTransformer
+    mc = ModelConfig.from_dict(config)
+    model = DecoderTransformer(mc)
+    model.load_state_dict(state_dict, strict=False)
     model.eval()
+    return model, mc
+
+
+def export_onnx_float32(model, config, output_path, max_seq_len=64):
 
     class Wrapper(torch.nn.Module):
         def __init__(self, model):
@@ -130,22 +144,39 @@ def save_vocab(vocab_path, output_dir):
     return len(vocab)
 
 
+def _find_checkpoint(model_size):
+    paths = [
+        f"output/{model_size}/best_model.pt",
+        f"output/{model_size}/logs/version_1/checkpoints/last.ckpt",
+        f"output/{model_size}/logs/version_0/checkpoints/last.ckpt",
+    ]
+    for p in paths:
+        if Path(p).exists():
+            return p
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(description="导出 ONNX + INT8 量化")
     parser.add_argument("--checkpoint", type=str, default=None)
     parser.add_argument("--model-size", default="small", choices=list(MODEL_SIZES.keys()))
     parser.add_argument("--output-dir", type=str, default=None)
+    parser.add_argument("--seq-len", type=int, default=None, help="序列长度 (默认从模型配置读取)")
     parser.add_argument("--quant", default="int8", choices=["int8", "uint8", "none"])
     parser.add_argument("--verify", action="store_true", default=True)
     args = parser.parse_args()
 
-    checkpoint = args.checkpoint or f"output/{args.model_size}/best_model.pt"
-    if not Path(checkpoint).exists():
+    checkpoint = args.checkpoint or _find_checkpoint(args.model_size)
+    if not checkpoint or not Path(checkpoint).exists():
         print(f"[ERROR] Checkpoint 不存在: {checkpoint}")
         return 1
 
     output_dir = Path(args.output_dir or f"mobile/{args.model_size}")
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # 用临时模型读取 config 中的 max_seq_len
+    from src.config import ModelConfig, get_config_manager
+    from src.data.dataset import SimpleTokenizer
 
     vocab_path = "data/vocab.json"
     tokenizer = load_vocab(vocab_path)
@@ -157,8 +188,11 @@ def main():
     print(f"输出目录:    {output_dir}")
     print("=" * 60)
 
+    # 载入模型获取 config
+    model, config = load_model(checkpoint)
+    seq_len = args.seq_len or config.max_seq_len or 64
     float_onnx = str(output_dir / "model.onnx")
-    float_size = export_onnx_float32(checkpoint, float_onnx)
+    float_size = export_onnx_float32(model, config, float_onnx, seq_len)
 
     if args.verify:
         print("\n--- 验证 float32 ---")
