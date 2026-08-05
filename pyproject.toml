@@ -17,6 +17,7 @@ dependencies = [
     "pyyaml>=6.0.0",
     "onnxscript>=0.7.0",
     "onnxruntime>=1.25.1",
+    "opencc-python-reimplemented>=0.1.7",
 ]
 
 [tool.uv.sources]

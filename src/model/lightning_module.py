@@ -96,6 +96,20 @@ class DecoderTransformerLightningModule(L.LightningModule):
             self.log("val/acc_top1", acc1, prog_bar=True, on_step=False, on_epoch=True)
             self.log("val/acc_top5", acc5, prog_bar=True, on_step=False, on_epoch=True)
 
+        # 联想场景指标：只评估序列最后一个位置的下一词预测（与 evaluate.py 对齐）
+        last_logits = logits[:, -1, :]
+        last_labels = labels[:, -1]
+        last_mask = last_labels != pad_id
+        if last_mask.any():
+            ll = last_logits[last_mask]
+            lb = last_labels[last_mask]
+            ltop1 = ll.argmax(dim=-1)
+            ltop5 = torch.topk(ll, 5, dim=-1).indices
+            last_acc1 = (ltop1 == lb).sum() / lb.numel()
+            last_acc5 = (ltop5 == lb.unsqueeze(-1)).any(dim=-1).sum() / lb.numel()
+            self.log("val/last_acc_top1", last_acc1, prog_bar=True, on_step=False, on_epoch=True)
+            self.log("val/last_acc_top5", last_acc5, prog_bar=True, on_step=False, on_epoch=True)
+
         self.validation_outputs.append(loss)
         return {"val_loss": loss}
 
@@ -117,11 +131,18 @@ class DecoderTransformerLightningModule(L.LightningModule):
 
         total_steps = self.trainer.estimated_stepping_batches
         warmup_steps = min(self.training_config.warmup_steps, total_steps // 10)
+        # 余弦衰减终点：默认用总步数；可显式指定衰减预算，
+        # 避免数据量放大导致 total_steps 膨胀、lr 长期不衰减。
+        decay_steps = self.training_config.lr_decay_steps
+        if decay_steps <= 0:
+            decay_steps = total_steps
+        decay_steps = max(decay_steps, warmup_steps + 1)
 
         def lr_lambda(current_step):
             if current_step < warmup_steps:
                 return float(current_step) / float(max(1, warmup_steps))
-            progress = float(current_step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+            progress = float(current_step - warmup_steps) / float(max(1, decay_steps - warmup_steps))
+            progress = min(progress, 1.0)
             return max(self.training_config.min_lr / self.training_config.learning_rate,
                        0.5 * (1.0 + torch.cos(torch.tensor(progress * 3.14159265359))))
 

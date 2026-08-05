@@ -210,6 +210,10 @@ def main():
     parser.add_argument("--vocab-size", type=int, default=5000, help="词表大小")
     parser.add_argument("--val-ratio", type=float, default=0.05, help="验证集比例")
     parser.add_argument("--char-vocab", default=None, help="常用汉字表 (如 label.txt)，启用字符种子 BPE")
+    parser.add_argument(
+        "--vocab-sample-lines", type=int, default=None,
+        help="仅用前 N 行训练词表(降内存)，tokenize 仍用全量。大数据建议设置，如 2000000",
+    )
     args = parser.parse_args()
 
     cleaned_path = Path(args.cleaned_file)
@@ -228,6 +232,20 @@ def main():
     val_path = output_dir / "val.bin"
     meta_path = output_dir / "meta.json"
 
+    # 可选：用采样子集训练词表，降低 tokenizers 内存峰值
+    train_vocab_path = str(cleaned_path)
+    sample_path = None
+    if args.vocab_sample_lines:
+        sample_path = output_dir / "vocab_sample.txt"
+        print(f"\n用前 {args.vocab_sample_lines:,} 行训练词表 (采样文件: {sample_path})")
+        with open(cleaned_path, "r", encoding="utf-8") as src, \
+             open(sample_path, "w", encoding="utf-8") as dst:
+            for i, line in enumerate(src):
+                if i >= args.vocab_sample_lines:
+                    break
+                dst.write(line)
+        train_vocab_path = str(sample_path)
+
     # 训练tokenizer (字符种子 或 标准 BPE)
     if args.char_vocab:
         char_path = Path(args.char_vocab)
@@ -235,15 +253,18 @@ def main():
             print(f"错误: 找不到字符文件 {char_path}")
             return
         tokenizer = train_char_seeded_tokenizer(
-            str(cleaned_path), args.vocab_size, str(vocab_path), args.char_vocab
+            train_vocab_path, args.vocab_size, str(vocab_path), args.char_vocab
         )
     else:
-        tokenizer = train_tokenizer(str(cleaned_path), args.vocab_size, str(vocab_path))
+        tokenizer = train_tokenizer(train_vocab_path, args.vocab_size, str(vocab_path))
 
     vocab_size = tokenizer.get_vocab_size()
 
     del tokenizer
     gc.collect()
+
+    if sample_path is not None and sample_path.exists():
+        sample_path.unlink()
 
     # 重新加载tokenizer并tokenize数据
     tokenizer = Tokenizer.from_file(str(vocab_path))

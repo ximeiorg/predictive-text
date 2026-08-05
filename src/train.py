@@ -96,6 +96,13 @@ def main():
         help="Learning rate (default: from config.yaml)",
     )
     parser.add_argument(
+        "--lr-decay-steps",
+        type=int,
+        default=None,
+        help="Cosine decay horizon in steps; 0 = auto (total steps). "
+             "Set an explicit budget to avoid lr staying high when data grows (default: from config.yaml)",
+    )
+    parser.add_argument(
         "--device",
         type=str,
         default="auto",
@@ -176,6 +183,12 @@ def main():
         default=12000,
         help="初始 BPE 词表大小 (默认 12000，配合 --prepare-vocab)",
     )
+    parser.add_argument(
+        "--limit-val-batches",
+        type=int,
+        default=2000,
+        help="每次验证使用的 batch 数 (默认 2000，即约 51 万样本，统计噪声更低)",
+    )
 
     args = parser.parse_args()
 
@@ -213,6 +226,8 @@ def main():
         training_config.batch_size = args.batch_size
     if args.lr is not None:
         training_config.learning_rate = args.lr
+    if args.lr_decay_steps is not None:
+        training_config.lr_decay_steps = args.lr_decay_steps
     if args.epochs is not None:
         training_config.num_epochs = args.epochs
     if args.max_seq_len is not None:
@@ -255,6 +270,7 @@ def main():
     print(f"  Weight Decay:    {training_config.weight_decay}")
     print(f"  Min LR:          {training_config.min_lr}")
     print(f"  Eval Steps:      {training_config.eval_steps}")
+    print(f"  LR Decay Steps:  {training_config.lr_decay_steps or 'auto'}")
     print()
 
     vocab_path = data_dir / "vocab.json"
@@ -298,10 +314,12 @@ def main():
     print(f"Model parameters: {num_params:,} ({num_params / 1e6:.2f}M)")
 
     # Create DataLoaders
+    # 数据已 shuffle 过，train 顺序读取 memmap 保持磁盘局部性，避免随机 I/O 导致
+    # 内存暴涨 + 卡顿 (shuffle=True 会对 4000 万样本全量 randperm 破坏局部性)
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=training_config.batch_size,
-        shuffle=True,
+        shuffle=False,
         num_workers=args.num_workers,
         drop_last=True,
         pin_memory=True,
@@ -351,7 +369,7 @@ def main():
         logger=logger,
         log_every_n_steps=10,
         val_check_interval=training_config.eval_steps,
-        limit_val_batches=200,
+        limit_val_batches=args.limit_val_batches,
         enable_progress_bar=True,
         enable_model_summary=True,
     )

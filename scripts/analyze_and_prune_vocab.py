@@ -20,6 +20,7 @@ import json
 import random
 import re
 import shutil
+import zlib
 from collections import Counter
 from pathlib import Path
 from typing import Iterator
@@ -398,6 +399,10 @@ def main():
         "--dry-run", action="store_true",
         help="只分析+打印统计信息，不执行 tokenize"
     )
+    parser.add_argument(
+        "--shuffle-split", action="store_true",
+        help="随机化 train/val 切分(默认取语料尾部，随机化避免 val 语域偏斜)"
+    )
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -460,6 +465,9 @@ def main():
     val_count = 0
     line_idx = 0
 
+    # 随机化切分：按行哈希取模决定归属，保证 val 从全语料均匀抽样而非取尾部
+    val_hash_mod = int(1 / args.val_ratio) if args.shuffle_split else None
+
     with (
         open(str(train_path) + ".tmp", "wb") as train_f,
         open(str(val_path) + ".tmp", "wb") as val_f,
@@ -470,12 +478,17 @@ def main():
             if not ids:
                 continue
             arr = np.array(ids, dtype=np.uint16)
-            if line_idx < total_lines - split_at:
-                train_f.write(arr.tobytes())
-                train_count += len(ids)
+            if args.shuffle_split:
+                h = zlib.crc32(line.encode("utf-8")) % val_hash_mod
+                is_val = (h == 0)
             else:
+                is_val = (line_idx >= total_lines - split_at)
+            if is_val:
                 val_f.write(arr.tobytes())
                 val_count += len(ids)
+            else:
+                train_f.write(arr.tobytes())
+                train_count += len(ids)
             line_idx += 1
             if line_idx % 100000 == 0:
                 gc.collect()
@@ -495,6 +508,7 @@ def main():
         "val_tokens": val_count,
         "source": args.corpus,
         "tokenizer_type": "longest_match_pruned",
+        "split_type": "random" if args.shuffle_split else "tail",
     }
     meta_path = output_dir / "meta.json"
     with open(meta_path, "w", encoding="utf-8") as f:

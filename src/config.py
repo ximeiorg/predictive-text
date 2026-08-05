@@ -79,6 +79,7 @@ class TrainingConfig:
     weight_decay: float = 0.01
     min_lr: float = 1e-5
     eval_steps: int = 500
+    lr_decay_steps: int = 0  # 余弦衰减终点步数; 0 = 自动使用总步数 (estimated_stepping_batches)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "TrainingConfig":
